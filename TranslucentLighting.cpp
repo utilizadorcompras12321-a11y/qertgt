@@ -759,7 +759,7 @@ private:
 	FMeshPassProcessorRenderState PassDrawRenderState;
 };
 
-void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHICmdList, FSceneRenderer* SceneRenderer, const FIntRect& CellRect)
+void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHICmdList, FSceneRenderer* SceneRenderer, const FIntRect& CellRect, FRHITexture* OpaqueDepthTexture)
 {
 	check(RHICmdList.IsInsideRenderPass());
 	check(IsInRenderingThread());
@@ -780,9 +780,10 @@ void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHIC
 		// Sample the original opaque CSM depth atlas. X/Y include the atlas tile offset;
 		// BorderSize is excluded from the actual rendered shadow region.
 		check(RenderTargets.DepthTarget);
+		check(OpaqueDepthTexture);
 		const FIntPoint OpaqueDepthExtent = RenderTargets.DepthTarget->GetDesc().Extent;
 		check(OpaqueDepthExtent.X > 0 && OpaqueDepthExtent.Y > 0);
-		PassParameters.OpaqueShadowDepthTexture = RenderTargets.DepthTarget->GetRenderTargetItem().ShaderResourceTexture;
+		PassParameters.OpaqueShadowDepthTexture = OpaqueDepthTexture;
 		PassParameters.OpaqueShadowDepthTextureSampler = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
 		PassParameters.OpaqueShadowDepthUVScaleBias = FVector4(
 			float(ResolutionX) / OpaqueDepthExtent.X,
