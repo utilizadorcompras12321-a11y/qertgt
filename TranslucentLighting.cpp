@@ -663,6 +663,12 @@ public:
 	}
 };
 
+class FColoredCascadeShadowShaderElementData : public FMeshMaterialShaderElementData
+{
+public:
+	float TranslucentShadowStartOffset = 0.0f;
+};
+
 class FColoredCascadeShadowPS : public FMeshMaterialShader
 {
 	DECLARE_SHADER_TYPE(FColoredCascadeShadowPS, MeshMaterial);
@@ -677,7 +683,25 @@ public:
 		FMeshMaterialShader(Initializer)
 	{
 		PassUniformBuffer.Bind(Initializer.ParameterMap, FColoredCascadePassUniformParameters::StaticStructMetadata.GetShaderVariableName());
+		TranslucentShadowStartOffset.Bind(Initializer.ParameterMap, TEXT("TranslucentShadowStartOffset"));
 	}
+
+	void GetShaderBindings(
+		const FScene* Scene,
+		ERHIFeatureLevel::Type FeatureLevel,
+		const FPrimitiveSceneProxy* PrimitiveSceneProxy,
+		const FMaterialRenderProxy& MaterialRenderProxy,
+		const FMaterial& Material,
+		const FMeshPassProcessorRenderState& DrawRenderState,
+		const FColoredCascadeShadowShaderElementData& ShaderElementData,
+		FMeshDrawSingleShaderBindings& ShaderBindings) const
+	{
+		FMeshMaterialShader::GetShaderBindings(Scene, FeatureLevel, PrimitiveSceneProxy, MaterialRenderProxy, Material, DrawRenderState, ShaderElementData, ShaderBindings);
+		ShaderBindings.Add(TranslucentShadowStartOffset, ShaderElementData.TranslucentShadowStartOffset);
+	}
+
+private:
+	LAYOUT_FIELD(FShaderParameter, TranslucentShadowStartOffset);
 };
 
 IMPLEMENT_MATERIAL_SHADER_TYPE(, FColoredCascadeShadowVS, TEXT("/Engine/Private/ColoredCascadeShadowDepth.usf"), TEXT("MainVS"), SF_Vertex);
@@ -689,9 +713,11 @@ public:
 	FColoredCascadePassMeshProcessor(const FScene* Scene,
 		const FSceneView* InViewIfDynamicMeshCommand,
 		const FMeshPassProcessorRenderState& InPassDrawRenderState,
+		const FProjectedShadowInfo* InShadowInfo,
 		FMeshPassDrawListContext* InDrawListContext)
 		: FMeshPassProcessor(Scene, Scene->GetFeatureLevel(), InViewIfDynamicMeshCommand, InDrawListContext)
 		, PassDrawRenderState(InPassDrawRenderState)
+		, ShadowInfo(InShadowInfo)
 	{}
 
 	virtual void AddMeshBatch(const FMeshBatch& RESTRICT MeshBatch, uint64 BatchElementMask, const FPrimitiveSceneProxy* RESTRICT PrimitiveSceneProxy, int32 StaticMeshId = -1) override final
@@ -734,8 +760,10 @@ public:
 		PassShaders.VertexShader = Material.GetShader<FColoredCascadeShadowVS>(VertexFactory->GetType());
 		PassShaders.PixelShader = Material.GetShader<FColoredCascadeShadowPS>(VertexFactory->GetType());
 
-		FMeshMaterialShaderElementData ShaderElementData;
+		FColoredCascadeShadowShaderElementData ShaderElementData;
 		ShaderElementData.InitializeMeshMaterialData(ViewIfDynamicMeshCommand, PrimitiveSceneProxy, MeshBatch, StaticMeshId, false);
+		const float LocalToWorldScale = ShadowInfo->GetParentSceneInfo()->Proxy->GetLocalToWorld().GetScaleVector().GetMax();
+		ShaderElementData.TranslucentShadowStartOffset = Material.GetTranslucentShadowStartOffset() * LocalToWorldScale / (ShadowInfo->MaxSubjectZ - ShadowInfo->MinSubjectZ);
 
 		const FMeshDrawCommandSortKey SortKey = CalculateMeshStaticSortKey(PassShaders.VertexShader, PassShaders.PixelShader);
 
@@ -756,6 +784,7 @@ public:
 
 private:
 	FMeshPassProcessorRenderState PassDrawRenderState;
+	const FProjectedShadowInfo* ShadowInfo;
 };
 
 void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHICmdList, FSceneRenderer* SceneRenderer, const FIntRect& CellRect, FRHITexture* OpaqueDepthTexture)
@@ -807,7 +836,7 @@ void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHIC
 	FMeshCommandOneFrameArray VisibleMeshDrawCommands;
 	FDynamicPassMeshDrawListContext DrawContext(DynamicMeshDrawCommandStorage, VisibleMeshDrawCommands, GraphicsMinimalPipelineStateSet, NeedsShaderInitialisation);
 
-	FColoredCascadePassMeshProcessor MeshProcessor(SceneRenderer->Scene, ShadowDepthView, DrawRenderState, &DrawContext);
+	FColoredCascadePassMeshProcessor MeshProcessor(SceneRenderer->Scene, ShadowDepthView, DrawRenderState, this, &DrawContext);
 
 	for (int32 MeshBatchIndex = 0; MeshBatchIndex < DynamicSubjectTranslucentMeshElements.Num(); MeshBatchIndex++)
 	{
