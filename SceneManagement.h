@@ -1441,8 +1441,8 @@ public:
 	inline FGuid GetLightGuid() const { return LightGuid; }
 	inline float GetShadowSharpen() const { return ShadowSharpen; }
 
-	/** Colored translucent cascade shadows: overridden by FDirectionalLightSceneProxy. */
-	virtual bool CastsColoredTranslucentCascadeShadows() const { return false; }
+	/** Whether this directional light uses the optional RGB-transmittance cascade pass. */
+	inline bool CastsColoredTranslucentCascadeShadows() const { return bCastColoredTranslucentCascadeShadows; }
 
 	inline float GetContactShadowLength() const { return ContactShadowLength; }
 	inline bool IsContactShadowLengthInWS() const { return bContactShadowLengthInWS; }
@@ -1647,6 +1647,8 @@ protected:
 
 	/** Whether the light is allowed to cast dynamic shadows from translucency. */
 	const uint8 bCastTranslucentShadows : 1;
+	/** Whether colored translucent CSM is enabled for this light. */
+	const uint8 bCastColoredTranslucentCascadeShadows : 1;
 
 	/** Whether light from this light transmits through surfaces with subsurface scattering profiles. Requires light to be movable. */
 	const uint8 bTransmission : 1;
