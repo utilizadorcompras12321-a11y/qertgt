@@ -17,6 +17,7 @@ struct FColoredShadowVSToPS
 {
 	FVertexFactoryInterpolantsVSToPS FactoryInterpolants;
 	float ShadowDepth : TEXCOORD6;
+	float3 WorldNormal : TEXCOORD7;
 };
 
 void MainVS(
@@ -37,8 +38,28 @@ void MainVS(
 
 	// The depth is passed as an interpolant instead of through SV_POSITION: no depth buffer is bound, and this way casters in front of
 	// the cascade near plane are clamped (bClampToNearPlane) instead of being clipped.
-	Output.ShadowDepth = max(ClipPos.z * ColoredCascadePass.InvMaxSubjectDepth, 0.0f);
-	OutPosition = float4(ClipPos.xy, 0.5f * ClipPos.w, ClipPos.w);
+	float4 ShadowClipPos = ClipPos;
+	if (ColoredCascadePass.bClampToNearPlane > 0.0f && ShadowClipPos.z < 0.0f)
+	{
+		ShadowClipPos.z = 0.000001f;
+		ShadowClipPos.w = 1.0f;
+	}
+
+	// Match the native CSM depth encoding, including its constant and slope-scaled bias.
+	const float3 ShadowViewDirection = float3(
+		ColoredCascadePass.ViewMatrix[0].z,
+		ColoredCascadePass.ViewMatrix[1].z,
+		ColoredCascadePass.ViewMatrix[2].z);
+	const float NoL = abs(dot(ShadowViewDirection, VertexFactoryGetWorldNormal(Input)));
+	const float MaxSlopeDepthBias = ColoredCascadePass.ShadowParams.z;
+	const float Slope = clamp(
+		NoL > 0.0f ? sqrt(saturate(1.0f - NoL * NoL)) / NoL : MaxSlopeDepthBias,
+		0.0f,
+		MaxSlopeDepthBias);
+	const float DepthBias = ColoredCascadePass.ShadowParams.x + ColoredCascadePass.ShadowParams.y * Slope;
+	Output.ShadowDepth = max(ShadowClipPos.z * ColoredCascadePass.ShadowParams.w + DepthBias, 0.0f);
+	Output.WorldNormal = VertexFactoryGetWorldNormal(Input);
+	OutPosition = float4(ShadowClipPos.xy, 0.5f * ShadowClipPos.w, ShadowClipPos.w);
 
 	Output.FactoryInterpolants = VertexFactoryGetInterpolantsVSToPS(Input, VFIntermediates, VertexParameters);
 }
