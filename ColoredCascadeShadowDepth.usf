@@ -1,0 +1,73 @@
+// Colored translucent cascaded shadow maps (custom addition for UE 4.27.2).
+// Caster pass: renders translucent meshes into one cell of the colored cascade atlas.
+//   SV_Target0 RGB = colored transmittance (blended multiplicatively, dst *= src)
+//   SV_Target1 R   = nearest translucent depth (32 bit float, blended with MIN) in the same normalized light space the receiver lookup uses
+
+#define USE_STENCIL_LOD_DITHER 0
+
+#include "Common.ush"
+
+// Reroute SceneTexturesStruct references (material depth fade etc.) to our pass uniform buffer.
+#define SceneTexturesStruct ColoredCascadePass.SceneTextures
+
+#include "/Engine/Generated/Material.ush"
+#include "/Engine/Generated/VertexFactory.ush"
+
+struct FColoredShadowVSToPS
+{
+	FVertexFactoryInterpolantsVSToPS FactoryInterpolants;
+	float ShadowDepth : TEXCOORD6;
+};
+
+void MainVS(
+	FVertexFactoryInput Input,
+	out FColoredShadowVSToPS Output,
+	out float4 OutPosition : SV_POSITION)
+{
+	ResolvedView = ResolveView();
+
+	FVertexFactoryIntermediates VFIntermediates = GetVertexFactoryIntermediates(Input);
+	float4 WorldPos = VertexFactoryGetWorldPosition(Input, VFIntermediates);
+	half3x3 TangentToLocal = VertexFactoryGetTangentToLocal(Input, VFIntermediates);
+
+	FMaterialVertexParameters VertexParameters = GetMaterialVertexParameters(Input, VFIntermediates, WorldPos.xyz, TangentToLocal);
+	WorldPos.xyz += GetMaterialWorldPositionOffset(VertexParameters);
+
+	const float4 ClipPos = mul(float4(WorldPos.xyz, 1), ColoredCascadePass.ProjectionMatrix);
+
+	// The depth is passed as an interpolant instead of through SV_POSITION: no depth buffer is bound, and this way casters in front of
+	// the cascade near plane are clamped (bClampToNearPlane) instead of being clipped.
+	Output.ShadowDepth = max(ClipPos.z * ColoredCascadePass.InvMaxSubjectDepth, 0.0f);
+	OutPosition = float4(ClipPos.xy, 0.5f * ClipPos.w, ClipPos.w);
+
+	Output.FactoryInterpolants = VertexFactoryGetInterpolantsVSToPS(Input, VFIntermediates, VertexParameters);
+}
+
+void MainPS(
+	FColoredShadowVSToPS Inputs,
+	in float4 SvPosition : SV_Position,
+	out float4 OutColor : SV_Target0,
+	out float OutDepth : SV_Target1)
+{
+	ResolvedView = ResolveView();
+
+	FMaterialPixelParameters MaterialParameters = GetMaterialPixelParameters(Inputs.FactoryInterpolants, SvPosition);
+	FPixelMaterialInputs PixelMaterialInputs;
+	CalcMaterialParameters(MaterialParameters, PixelMaterialInputs, SvPosition, 1);
+
+	const float Opacity = saturate(GetMaterialOpacity(PixelMaterialInputs));
+
+	// Practically invisible surfaces neither tint nor register a depth.
+	clip(Opacity - 0.02f);
+
+	// Tint color: Base Color for lit translucent materials, Emissive Color for unlit ones (their Base Color pin does not exist).
+#if MATERIAL_SHADINGMODEL_UNLIT
+	const float3 TintColor = saturate(GetMaterialEmissive(PixelMaterialInputs));
+#else
+	const float3 TintColor = saturate(GetMaterialBaseColor(PixelMaterialInputs));
+#endif
+
+	// Fraction of each color channel of the light that makes it through the surface.
+	OutColor = float4(lerp(1.0f, TintColor, Opacity), 1.0f);
+	OutDepth = Inputs.ShadowDepth;
+}
