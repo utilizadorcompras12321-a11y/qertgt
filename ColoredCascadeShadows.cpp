@@ -234,18 +234,26 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 
 	RDG_EVENT_SCOPE(GraphBuilder, "ColoredCascadeShadows");
 
-	// Pack variable-sized cells vertically. Each cell uses the exact resolution allocated to its source CSM cascade.
-	int32 AtlasWidth = 1;
-	int32 AtlasHeight = 0;
+	// Pack variable-sized cells in two columns. Each cell keeps the exact resolution allocated to its source CSM cascade.
+	uint32 MaxCellWidth = 1;
+	uint32 MaxCellHeight = 1;
+	for (const FColoredCascadeShadowEntry& Entry : VisibleLightInfo.ColoredCascadeShadows)
+	{
+		MaxCellWidth = FMath::Max(MaxCellWidth, Entry.Shadow->ResolutionX);
+		MaxCellHeight = FMath::Max(MaxCellHeight, Entry.Shadow->ResolutionY);
+	}
+	const int32 AtlasColumns = FMath::Min(2, NumCells);
+	const int32 AtlasRows = FMath::DivideAndRoundUp(NumCells, AtlasColumns);
 	for (FColoredCascadeShadowEntry& Entry : VisibleLightInfo.ColoredCascadeShadows)
 	{
+		const int32 Column = Entry.CellIndex % AtlasColumns;
+		const int32 Row = Entry.CellIndex / AtlasColumns;
 		const int32 CellWidth = FMath::Max(Entry.Shadow->ResolutionX, 1u);
 		const int32 CellHeight = FMath::Max(Entry.Shadow->ResolutionY, 1u);
-		Entry.CellRect = FIntRect(0, AtlasHeight, CellWidth, AtlasHeight + CellHeight);
-		AtlasWidth = FMath::Max(AtlasWidth, CellWidth);
-		AtlasHeight += CellHeight;
+		Entry.CellRect = FIntRect(Column * MaxCellWidth, Row * MaxCellHeight,
+			Column * MaxCellWidth + CellWidth, Row * MaxCellHeight + CellHeight);
 	}
-	const FIntPoint AtlasSize(AtlasWidth, AtlasHeight);
+	const FIntPoint AtlasSize(AtlasColumns * MaxCellWidth, AtlasRows * MaxCellHeight);
 
 	// Color atlas: RGB colored transmittance (cleared to 1). Depth atlas: nearest translucent depth in 32 bit float (cleared to 1 = far plane).
 	// The depth must not be 16 bit: it is normalized by the cascade depth range (thousands of units), so half floats cannot resolve small distances.
