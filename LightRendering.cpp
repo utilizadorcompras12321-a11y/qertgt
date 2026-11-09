@@ -21,6 +21,7 @@
 #include "ScreenPass.h"
 #include "SkyAtmosphereRendering.h"
 #include "VolumetricCloudRendering.h"
+#include "ColoredCascadeShadows.h"
 
 // ENABLE_DEBUG_DISCARD_PROP is used to test the lighting code by allowing to discard lights to see how performance scales
 // It ought never to be enabled in a shipping build, and is probably only really useful when woring on the shading code.
@@ -357,6 +358,7 @@ struct FRenderLightParams
 	FShaderResourceViewRHIRef HairVisibilityNodeDataSRV = nullptr;
 
 	IPooledRenderTarget* ScreenShadowMaskSubPixelTexture = nullptr;
+	FRHITexture* ColoredCascadeShadowTintTexture = nullptr;
 
 	// Cloud shadow data
 	FMatrix Cloud_WorldToLightClipShadowMatrix;
@@ -441,6 +443,7 @@ class FDeferredLightPS : public FGlobalShader
 	class FHairLighting			: SHADER_PERMUTATION_INT("USE_HAIR_LIGHTING", 2);
 	class FAtmosphereTransmittance : SHADER_PERMUTATION_BOOL("USE_ATMOSPHERE_TRANSMITTANCE");
 	class FCloudTransmittance 	: SHADER_PERMUTATION_BOOL("USE_CLOUD_TRANSMITTANCE");
+	class FColoredCascadeShadowTintDim : SHADER_PERMUTATION_BOOL("USE_COLORED_CASCADE_SHADOW_TINT");
 	class FAnistropicMaterials 	: SHADER_PERMUTATION_BOOL("SUPPORTS_ANISOTROPIC_MATERIALS");
 
 	using FPermutationDomain = TShaderPermutationDomain<
@@ -454,6 +457,7 @@ class FDeferredLightPS : public FGlobalShader
 		FHairLighting,
 		FAtmosphereTransmittance,
 		FCloudTransmittance,
+		FColoredCascadeShadowTintDim,
 		FAnistropicMaterials>;
 
 	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
@@ -552,6 +556,9 @@ class FDeferredLightPS : public FGlobalShader
 		HairVisibilityNodeData.Bind(Initializer.ParameterMap, TEXT("HairVisibilityNodeData"));
 
 		DummyRectLightTextureForCapsuleCompilerWarning.Bind(Initializer.ParameterMap, TEXT("DummyRectLightTextureForCapsuleCompilerWarning"));
+
+		ColoredCascadeShadowTintTexture.Bind(Initializer.ParameterMap, TEXT("ColoredCascadeShadowTintTexture"));
+		ColoredCascadeShadowTintTextureSampler.Bind(Initializer.ParameterMap, TEXT("ColoredCascadeShadowTintTextureSampler"));
 
 		CloudShadowmapTexture.Bind(Initializer.ParameterMap, TEXT("CloudShadowmapTexture"));
 		CloudShadowmapSampler.Bind(Initializer.ParameterMap, TEXT("CloudShadowmapSampler"));
@@ -787,6 +794,17 @@ private:
 			);
 		}
 
+		if (ColoredCascadeShadowTintTexture.IsBound())
+		{
+			SetTextureParameter(
+				RHICmdList,
+				ShaderRHI,
+				ColoredCascadeShadowTintTexture,
+				ColoredCascadeShadowTintTextureSampler,
+				TStaticSamplerState<SF_Bilinear, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI(),
+				RenderLightParams && RenderLightParams->ColoredCascadeShadowTintTexture ? RenderLightParams->ColoredCascadeShadowTintTexture : GWhiteTexture->TextureRHI);
+		}
+
 		if (CloudShadowmapTexture.IsBound())
 		{
 			if (RenderLightParams && RenderLightParams->Cloud_ShadowmapTexture)
@@ -845,6 +863,9 @@ private:
 	LAYOUT_FIELD(FShaderParameter, HairDualScatteringRoughnessOverride);
 
 	LAYOUT_FIELD(FShaderResourceParameter, DummyRectLightTextureForCapsuleCompilerWarning);
+
+	LAYOUT_FIELD(FShaderResourceParameter, ColoredCascadeShadowTintTexture);
+	LAYOUT_FIELD(FShaderResourceParameter, ColoredCascadeShadowTintTextureSampler);
 
 	LAYOUT_FIELD(FShaderResourceParameter, CloudShadowmapTexture);
 	LAYOUT_FIELD(FShaderResourceParameter, CloudShadowmapSampler);
@@ -1184,6 +1205,7 @@ static FHairStrandsOcclusionResources GetHairStrandsResources(int32 ViewIndex, F
 /** Shader parameters to use when creating a RenderLight(...) pass. */
 BEGIN_SHADER_PARAMETER_STRUCT(FRenderLightParameters, )
 	SHADER_PARAMETER_RDG_UNIFORM_BUFFER(FSceneTextureUniformParameters, SceneTextures)
+	RDG_TEXTURE_ACCESS(ColoredCascadeShadowTintTexture, ERHIAccess::SRVGraphics)
 	RDG_TEXTURE_ACCESS(HairCategorizationTexture, ERHIAccess::SRVGraphics)
 	RDG_TEXTURE_ACCESS(ShadowMaskTexture, ERHIAccess::SRVGraphics)
 	RDG_TEXTURE_ACCESS(LightingChannelsTexture, ERHIAccess::SRVGraphics) 
@@ -1197,9 +1219,11 @@ void GetRenderLightParameters(
 	FRDGTextureRef LightingChannelsTexture,
 	TRDGUniformBufferRef<FSceneTextureUniformParameters> SceneTexturesUniformBuffer,
 	const FHairStrandsVisibilityViews* InHairVisibilityViews,
-	FRenderLightParameters& Parameters)
+	FRenderLightParameters& Parameters,
+	FRDGTextureRef ColoredCascadeShadowTintTexture = nullptr)
 {
 	Parameters.SceneTextures = SceneTexturesUniformBuffer;
+	Parameters.ColoredCascadeShadowTintTexture = ColoredCascadeShadowTintTexture;
 	Parameters.ShadowMaskTexture = ShadowMaskTexture;
 	Parameters.LightingChannelsTexture = LightingChannelsTexture;
 	Parameters.HairCategorizationTexture = InHairVisibilityViews && InHairVisibilityViews->HairDatas.Num() > 0 ? InHairVisibilityViews->HairDatas[0].CategorizationTexture : nullptr;
@@ -2040,7 +2064,8 @@ FRDGTextureRef FDeferredShadingSceneRenderer::RenderLights(
 				if (bDirectLighting)
 				{
 					const bool bRenderOverlap = false;
-					RenderLight(GraphBuilder, SceneColorTexture, SceneDepthTexture, SceneTexturesUniformBuffer, &LightSceneInfo, ScreenShadowMaskTexture, LightingChannelsTexture, InHairVisibilityViews, bRenderOverlap);
+					FRDGTextureRef ColoredCascadeShadowTintTexture = RenderColoredCascadeShadowTint(GraphBuilder, *this, SceneTexturesUniformBuffer, SceneDepthTexture->Desc.Extent, LightSceneInfo);
+					RenderLight(GraphBuilder, SceneColorTexture, SceneDepthTexture, SceneTexturesUniformBuffer, &LightSceneInfo, ScreenShadowMaskTexture, LightingChannelsTexture, InHairVisibilityViews, bRenderOverlap, ColoredCascadeShadowTintTexture);
 				}
 
 				if (bUseHairLighting)
@@ -2228,7 +2253,8 @@ void FDeferredShadingSceneRenderer::RenderLight(
 	FRHITexture* ScreenShadowMaskTexture,
 	FRHITexture* LightingChannelsTexture,
 	const FHairStrandsVisibilityViews* InHairVisibilityViews,
-	bool bRenderOverlap, bool bIssueDrawEvent)
+	bool bRenderOverlap, bool bIssueDrawEvent,
+	FRHITexture* ColoredCascadeShadowTintTexture)
 {
 	SCOPE_CYCLE_COUNTER(STAT_DirectLightRenderingTime);
 	INC_DWORD_STAT(STAT_NumLightsUsingStandardDeferred);
@@ -2265,6 +2291,7 @@ void FDeferredShadingSceneRenderer::RenderLight(
 		RHICmdList.SetViewport(View.ViewRect.Min.X, View.ViewRect.Min.Y, 0.0f, View.ViewRect.Max.X, View.ViewRect.Max.Y, 1.0f);
 
 		FRenderLightParams RenderLightParams;
+		RenderLightParams.ColoredCascadeShadowTintTexture = ColoredCascadeShadowTintTexture;
 		const int32 HairViewIndex = 0; // HAIR_TODO multiview support
 		const bool bHairLighting = InHairVisibilityViews && HairViewIndex < InHairVisibilityViews->HairDatas.Num() && InHairVisibilityViews->HairDatas[HairViewIndex].CategorizationTexture != nullptr;
 		if (bHairLighting)
@@ -2329,6 +2356,7 @@ void FDeferredShadingSceneRenderer::RenderLight(
 				// Only directional lights are rendered in this path, so we only need to check if it is use to light the atmosphere
 				PermutationVector.Set< FDeferredLightPS::FAtmosphereTransmittance >(bAtmospherePerPixelTransmittance);
 				PermutationVector.Set< FDeferredLightPS::FCloudTransmittance >(bLight0CloudPerPixelTransmittance || bLight1CloudPerPixelTransmittance);
+				PermutationVector.Set< FDeferredLightPS::FColoredCascadeShadowTintDim >(ColoredCascadeShadowTintTexture != nullptr);
 
 				TShaderMapRef< FDeferredLightPS > PixelShader( View.ShaderMap, PermutationVector );
 				GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GFilterVertexDeclaration.VertexDeclarationRHI;
@@ -2441,10 +2469,11 @@ void FDeferredShadingSceneRenderer::RenderLight(
 	FRDGTextureRef ScreenShadowMaskTexture,
 	FRDGTextureRef LightingChannelsTexture,
 	const FHairStrandsVisibilityViews* InHairVisibilityViews,
-	bool bRenderOverlap)
+	bool bRenderOverlap,
+	FRDGTextureRef ColoredCascadeShadowTintTexture)
 {
 	FRenderLightParameters* PassParameters = GraphBuilder.AllocParameters<FRenderLightParameters>();
-	GetRenderLightParameters(SceneColorTexture, SceneDepthTexture, ScreenShadowMaskTexture, LightingChannelsTexture, SceneTexturesUniformBuffer, InHairVisibilityViews, *PassParameters);
+	GetRenderLightParameters(SceneColorTexture, SceneDepthTexture, ScreenShadowMaskTexture, LightingChannelsTexture, SceneTexturesUniformBuffer, InHairVisibilityViews, *PassParameters, ColoredCascadeShadowTintTexture);
 
 	ERDGPassFlags PassFlags = ERDGPassFlags::Raster;
 
@@ -2457,7 +2486,7 @@ void FDeferredShadingSceneRenderer::RenderLight(
 		RDG_EVENT_NAME("StandardDeferredLighting"),
 		PassParameters,
 		PassFlags,
-		[this, LightSceneInfo, ScreenShadowMaskTexture, LightingChannelsTexture, InHairVisibilityViews, bRenderOverlap](FRHICommandList& RHICmdList)
+		[this, LightSceneInfo, ScreenShadowMaskTexture, LightingChannelsTexture, InHairVisibilityViews, bRenderOverlap, ColoredCascadeShadowTintTexture](FRHICommandList& RHICmdList)
 	{
 		RenderLight(
 			RHICmdList,
@@ -2466,7 +2495,8 @@ void FDeferredShadingSceneRenderer::RenderLight(
 			TryGetRHI(LightingChannelsTexture),
 			InHairVisibilityViews,
 			bRenderOverlap,
-			false);
+			false,
+			TryGetRHI(ColoredCascadeShadowTintTexture));
 	});
 }
 
