@@ -270,7 +270,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 	FRDGTextureRef AtlasTexture = GraphBuilder.CreateTexture(AtlasDesc, TEXT("ColoredCascadeShadowAtlas"));
 	FRDGTextureRef DepthAtlasTexture = GraphBuilder.CreateTexture(DepthAtlasDesc, TEXT("ColoredCascadeShadowDepthAtlas"));
 
-	// Caster pass. Added to the graph here, so it executes after the regular shadow depth pass (which is also a graph pass).
+	// Caster pass. The registered opaque CSM depth inputs below declare its dependency on the regular shadow-depth pass.
 	{
 		TArray<FColoredCascadeShadowEntry> Entries;
 		Entries.Append(VisibleLightInfo.ColoredCascadeShadows);
