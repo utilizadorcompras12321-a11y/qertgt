@@ -282,7 +282,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 
 		// Register every original opaque CSM depth target with RDG. This declares the caster
 		// pass's SRV dependencies and lets RDG order the pass after the shadow-depth producers.
-		TArray<FRDGTextureRef, SceneRenderingAllocator> OpaqueDepthTextures;
+		TArray<FRDGTextureRef> OpaqueDepthTextures;
 		OpaqueDepthTextures.Reserve(Entries.Num());
 		check(Entries.Num() <= ColoredCascadeShadows::MaxCells);
 		for (int32 EntryIndex = 0; EntryIndex < Entries.Num(); ++EntryIndex)
