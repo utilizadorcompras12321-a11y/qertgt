@@ -17,7 +17,6 @@ struct FColoredShadowVSToPS
 {
 	FVertexFactoryInterpolantsVSToPS FactoryInterpolants;
 	float ShadowDepth : TEXCOORD6;
-	float3 WorldNormal : TEXCOORD7;
 };
 
 void MainVS(
@@ -58,7 +57,6 @@ void MainVS(
 		MaxSlopeDepthBias);
 	const float DepthBias = ColoredCascadePass.ShadowParams.x + ColoredCascadePass.ShadowParams.y * Slope;
 	Output.ShadowDepth = max(ShadowClipPos.z * ColoredCascadePass.ShadowParams.w + DepthBias, 0.0f);
-	Output.WorldNormal = VertexFactoryGetWorldNormal(Input);
 	OutPosition = float4(ShadowClipPos.xy, 0.5f * ShadowClipPos.w, ShadowClipPos.w);
 
 	Output.FactoryInterpolants = VertexFactoryGetInterpolantsVSToPS(Input, VFIntermediates, VertexParameters);
