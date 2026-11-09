@@ -123,6 +123,10 @@ class ENGINE_API ULightComponent : public ULightComponentBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Light, AdvancedDisplay)
 	uint32 CastTranslucentShadows:1;
 
+	/** Whether a directional light casts dynamic RGB-transmittance shadows from translucent casters onto opaque receivers. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Light, AdvancedDisplay, meta=(DisplayName="Colored Translucent Cascade Shadows"))
+	uint32 bCastColoredTranslucentCascadeShadows:1;
+
 	/** 
 	 * Whether the light should only cast shadows from components marked as bCastCinematicShadows. 
 	 * This is useful for setting up cinematic Movable spotlights aimed at characters and avoiding the shadow depth rendering costs of the background.
