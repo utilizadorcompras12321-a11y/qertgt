@@ -635,6 +635,10 @@ void FProjectedShadowInfo::RenderTranslucencyDepths(FRHICommandList& RHICmdList,
 
 BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT(FColoredCascadePassUniformParameters,)
 	SHADER_PARAMETER_STRUCT(FSceneTextureUniformParameters, SceneTextures)
+	SHADER_PARAMETER_TEXTURE(Texture2D, OpaqueShadowDepthTexture)
+	SHADER_PARAMETER_SAMPLER(SamplerState, OpaqueShadowDepthTextureSampler)
+	SHADER_PARAMETER(FVector4, OpaqueShadowDepthUVScaleBias)
+	SHADER_PARAMETER(FVector4, AtlasCellRect)
 	SHADER_PARAMETER(FMatrix, ProjectionMatrix)
 	SHADER_PARAMETER(float, bClampToNearPlane)
 	SHADER_PARAMETER(float, InvMaxSubjectDepth)
@@ -768,6 +772,20 @@ void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHIC
 		PassParameters.ProjectionMatrix = FTranslationMatrix(PreShadowTranslation - ShadowDepthView->ViewMatrices.GetPreViewTranslation()) * SubjectAndReceiverMatrix;
 		PassParameters.bClampToNearPlane = 1.0f;
 		PassParameters.InvMaxSubjectDepth = InvMaxSubjectDepth;
+
+		// Sample the original opaque CSM depth atlas. X/Y include the atlas tile offset;
+		// BorderSize is excluded from the actual rendered shadow region.
+		check(RenderTargets.DepthTarget);
+		const FIntPoint OpaqueDepthExtent = RenderTargets.DepthTarget->GetDesc().Extent;
+		check(OpaqueDepthExtent.X > 0 && OpaqueDepthExtent.Y > 0);
+		PassParameters.OpaqueShadowDepthTexture = RenderTargets.DepthTarget->GetRenderTargetItem().ShaderResourceTexture;
+		PassParameters.OpaqueShadowDepthTextureSampler = TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
+		PassParameters.OpaqueShadowDepthUVScaleBias = FVector4(
+			float(ResolutionX) / OpaqueDepthExtent.X,
+			float(ResolutionY) / OpaqueDepthExtent.Y,
+			float(X + BorderSize) / OpaqueDepthExtent.X,
+			float(Y + BorderSize) / OpaqueDepthExtent.Y);
+		PassParameters.AtlasCellRect = FVector4(CellRect.Min.X, CellRect.Min.Y, CellRect.Width(), CellRect.Height());
 	}
 	TUniformBufferRef<FColoredCascadePassUniformParameters> PassUniformBuffer = TUniformBufferRef<FColoredCascadePassUniformParameters>::CreateUniformBufferImmediate(PassParameters, UniformBuffer_SingleFrame, EUniformBufferValidation::None);
 
