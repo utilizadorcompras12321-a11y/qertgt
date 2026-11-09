@@ -258,7 +258,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 	// Color atlas: RGB colored transmittance (cleared to 1). Depth atlas: nearest translucent depth in 32 bit float (cleared to 1 = far plane).
 	// The depth must not be 16 bit: it is normalized by the cascade depth range (thousands of units), so half floats cannot resolve small distances.
 	const FRDGTextureDesc AtlasDesc = FRDGTextureDesc::Create2D(AtlasSize, PF_FloatRGBA, FClearValueBinding::White, TexCreate_RenderTargetable | TexCreate_ShaderResource);
-	const FRDGTextureDesc DepthAtlasDesc = FRDGTextureDesc::Create2D(AtlasSize, PF_R32_FLOAT, FClearValueBinding::White, TexCreate_RenderTargetable | TexCreate_ShaderResource);
+	const FRDGTextureDesc DepthAtlasDesc = FRDGTextureDesc::Create2D(AtlasSize, PF_R32_FLOAT, FClearValueBinding::Black, TexCreate_RenderTargetable | TexCreate_ShaderResource);
 	FRDGTextureRef AtlasTexture = GraphBuilder.CreateTexture(AtlasDesc, TEXT("ColoredCascadeShadowAtlas"));
 	FRDGTextureRef DepthAtlasTexture = GraphBuilder.CreateTexture(DepthAtlasDesc, TEXT("ColoredCascadeShadowDepthAtlas"));
 
