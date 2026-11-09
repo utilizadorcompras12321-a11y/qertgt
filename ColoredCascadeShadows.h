@@ -4,7 +4,7 @@
 //  RenderColoredCascadeShadowTint() is called from FDeferredShadingSceneRenderer::RenderLights() (render graph BUILD time) for every
 //  shadowed light, right before the light is applied. For lights with UDirectionalLightComponent::bCastColoredTranslucentCascadeShadows it adds:
 //   1. a raster pass that renders the translucent casters of the first N cascades into ONE small atlas
-//      (RGB = colored transmittance, A = nearest translucent depth). It runs after the regular shadow depth pass because the graph executes in order.
+//      (RGB = colored transmittance, auxiliary depth = farthest translucent caster). It runs after the regular shadow depth pass because the graph executes in order.
 //   2. a full screen pass that reads the atlas and writes a screen space RGB tint (white = no tint) for opaque receivers.
 //  DeferredLightPixelShaders.usf then multiplies the light radiance by that tint (USE_COLORED_SHADOW_TINT permutation).
 //
