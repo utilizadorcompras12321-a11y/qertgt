@@ -22,6 +22,11 @@
 #include "/Engine/Private/SkyAtmosphereCommon.ush"
 #endif
 
+#if USE_COLORED_CASCADE_SHADOW_TINT
+Texture2D<float3> ColoredCascadeShadowTintTexture;
+SamplerState ColoredCascadeShadowTintTextureSampler;
+#endif
+
 #if USE_CLOUD_TRANSMITTANCE
 #include "VolumetricCloudCommon.ush"
 Texture2D<float3> CloudShadowmapTexture;
@@ -192,6 +197,9 @@ void DeferredLightPixelMain(
 
 		OutColor += (Radiance * Attenuation);
 
+	#if USE_COLORED_CASCADE_SHADOW_TINT
+		OutColor.rgb *= ColoredCascadeShadowTintTexture.SampleLevel(ColoredCascadeShadowTintTextureSampler, InputParams.ScreenUV, 0);
+	#endif
 
 	#if USE_ATMOSPHERE_TRANSMITTANCE || USE_CLOUD_TRANSMITTANCE
 		float DeviceZ = LookupDeviceZ(ScreenUV);
