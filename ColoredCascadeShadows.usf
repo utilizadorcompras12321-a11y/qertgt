@@ -134,7 +134,7 @@ void TintMainPS(
 			float CasterDepth;
 			DebugCascadeSample(UsedCascade, ScreenPosition, ReceiverZ, UV, CasterDepth);
 			const bool bOutside = any(UV < 0.0f) || any(UV > 1.0f);
-			const bool bHasCaster = CasterDepth < 0.999f;
+			const bool bHasCaster = CasterDepth > 1e-6f;
 
 			if (DebugMode == 4)
 			{
