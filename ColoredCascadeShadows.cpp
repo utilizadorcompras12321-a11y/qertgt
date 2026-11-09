@@ -248,8 +248,8 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 	{
 		const int32 Column = Entry.CellIndex % AtlasColumns;
 		const int32 Row = Entry.CellIndex / AtlasColumns;
-		const int32 CellWidth = FMath::Max(Entry.Shadow->ResolutionX, 1u);
-		const int32 CellHeight = FMath::Max(Entry.Shadow->ResolutionY, 1u);
+		const int32 CellWidth = FMath::Max(static_cast<int32>(Entry.Shadow->ResolutionX), 1);
+		const int32 CellHeight = FMath::Max(static_cast<int32>(Entry.Shadow->ResolutionY), 1);
 		Entry.CellRect = FIntRect(Column * MaxCellWidth, Row * MaxCellHeight,
 			Column * MaxCellWidth + CellWidth, Row * MaxCellHeight + CellHeight);
 	}
