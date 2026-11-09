@@ -70,7 +70,7 @@ void MainPS(
 	// Match the native translucent shadow pass: apply material clipping and the per-material depth start offset.
 	GetMaterialClippingShadowDepth(MaterialParameters, PixelMaterialInputs);
 	const float ShadowDepth = Inputs.ShadowDepth + TranslucentShadowStartOffset;
-	const float Opacity = saturate(GetMaterialOpacity(PixelMaterialInputs));
+	const float Opacity = saturate(GetMaterialOpacity(PixelMaterialInputs) * GetMaterialTranslucentShadowDensityScale());
 
 	// Reject translucent casters hidden behind opaque geometry in the original CSM.
 	// Both values use the same normalized subject-depth convention as the regular CSM shadow lookup.
