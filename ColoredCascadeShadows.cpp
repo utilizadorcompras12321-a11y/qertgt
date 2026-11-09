@@ -280,8 +280,8 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 		CasterParameters->RenderTargets[0] = FRenderTargetBinding(AtlasTexture, ERenderTargetLoadAction::EClear);
 		CasterParameters->RenderTargets[1] = FRenderTargetBinding(DepthAtlasTexture, ERenderTargetLoadAction::EClear);
 
-		// Register every original opaque CSM depth target with RDG. This declares the caster
-		// pass's SRV dependencies and lets RDG order the pass after the shadow-depth producers.
+		// Import every original opaque CSM depth target into RDG. This declares the caster
+		// pass's SRV reads and lets RDG manage the required resource access transitions.
 		TArray<FRDGTextureRef> OpaqueDepthTextures;
 		OpaqueDepthTextures.Reserve(Entries.Num());
 		check(Entries.Num() <= ColoredCascadeShadows::MaxCells);
