@@ -278,6 +278,32 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			ERDGPassFlags::Raster,
 			[Renderer, Entries, bLog, AtlasSize](FRHICommandList& RHICmdList)
 		{
+			// The caster pixel shader samples the original opaque CSM depth. These shadow maps are
+			// produced by the legacy shadow renderer, outside RDG, so explicitly transition each
+			// unique pooled depth target to graphics SRV before any cascade samples it.
+			TSet<IPooledRenderTarget*, DefaultKeyFuncs<IPooledRenderTarget*>, SceneRenderingSetAllocator> OpaqueDepthTargets;
+			TArray<FRHITransitionInfo, SceneRenderingAllocator> OpaqueDepthTransitions;
+			for (const FColoredCascadeShadowEntry& Entry : Entries)
+			{
+				IPooledRenderTarget* OpaqueDepthTarget = Entry.Shadow->RenderTargets.DepthTarget;
+				if (OpaqueDepthTarget)
+				{
+					bool bAlreadyAdded = false;
+					OpaqueDepthTargets.Emplace(OpaqueDepthTarget, &bAlreadyAdded);
+					if (!bAlreadyAdded)
+					{
+						OpaqueDepthTransitions.Add(FRHITransitionInfo(
+							OpaqueDepthTarget->GetShaderResourceRHI(),
+							ERHIAccess::Unknown,
+							ERHIAccess::SRVGraphics));
+					}
+				}
+			}
+			if (OpaqueDepthTransitions.Num() > 0)
+			{
+				RHICmdList.Transition(OpaqueDepthTransitions);
+			}
+
 			for (const FColoredCascadeShadowEntry& Entry : Entries)
 			{
 				const FIntRect& CellRect = Entry.CellRect;
