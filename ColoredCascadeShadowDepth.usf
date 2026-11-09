@@ -53,6 +53,8 @@ void MainVS(
 	Output.FactoryInterpolants = VertexFactoryGetInterpolantsVSToPS(Input, VFIntermediates, VertexParameters);
 }
 
+float TranslucentShadowStartOffset;
+
 void MainPS(
 	FColoredShadowVSToPS Inputs,
 	in float4 SvPosition : SV_Position,
@@ -65,6 +67,9 @@ void MainPS(
 	FPixelMaterialInputs PixelMaterialInputs;
 	CalcMaterialParameters(MaterialParameters, PixelMaterialInputs, SvPosition, 1);
 
+	// Match the native translucent shadow pass: apply material clipping and the per-material depth start offset.
+	GetMaterialClippingShadowDepth(MaterialParameters, PixelMaterialInputs);
+	const float ShadowDepth = Inputs.ShadowDepth + TranslucentShadowStartOffset;
 	const float Opacity = saturate(GetMaterialOpacity(PixelMaterialInputs));
 
 	// Reject translucent casters hidden behind opaque geometry in the original CSM.
@@ -73,7 +78,7 @@ void MainPS(
 	const float2 LocalCascadeUV = (SvPosition.xy - ColoredCascadePass.AtlasCellRect.xy) / max(ColoredCascadePass.AtlasCellRect.zw, 1.0f.xx);
 	const float2 OpaqueDepthUV = LocalCascadeUV * ColoredCascadePass.OpaqueShadowDepthUVScaleBias.xy + ColoredCascadePass.OpaqueShadowDepthUVScaleBias.zw;
 	const float OpaqueDepth = ColoredCascadePass.OpaqueShadowDepthTexture.SampleLevel(ColoredCascadePass.OpaqueShadowDepthTextureSampler, OpaqueDepthUV, 0).r;
-	clip(OpaqueDepth - Inputs.ShadowDepth + 1e-5f);
+	clip(OpaqueDepth - ShadowDepth + 1e-5f);
 
 	// Practically invisible surfaces neither tint nor register a depth.
 	clip(Opacity - 0.02f);
@@ -87,5 +92,5 @@ void MainPS(
 
 	// Fraction of each color channel of the light that makes it through the surface.
 	OutColor = float4(lerp(1.0f, TintColor, Opacity), 1.0f);
-	OutDepth = Inputs.ShadowDepth;
+	OutDepth = ShadowDepth;
 }
