@@ -294,7 +294,7 @@ public:
 
 	static bool ShouldCompilePermutation(const FMeshMaterialShaderPermutationParameters& Parameters)
 	{
-		return IsTranslucentBlendMode(Parameters.MaterialParameters.BlendMode) && IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+		return Parameters.MaterialParameters.BlendMode == BLEND_Translucent && IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
 	}
 
 	FTranslucencyShadowDepthVS() {}
@@ -347,7 +347,7 @@ public:
 
 	static bool ShouldCompilePermutation(const FMeshMaterialShaderPermutationParameters& Parameters)
 	{
-		return IsTranslucentBlendMode(Parameters.MaterialParameters.BlendMode) && IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+		return Parameters.MaterialParameters.BlendMode == BLEND_Translucent && IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
 	}
 
 	FTranslucencyShadowDepthPS(const ShaderMetaType::CompiledShaderInitializerType& Initializer):
@@ -653,7 +653,7 @@ class FColoredCascadeShadowVS : public FMeshMaterialShader
 public:
 	static bool ShouldCompilePermutation(const FMeshMaterialShaderPermutationParameters& Parameters)
 	{
-		return IsTranslucentBlendMode(Parameters.MaterialParameters.BlendMode) && IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+		return Parameters.MaterialParameters.BlendMode == BLEND_Translucent && IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
 	}
 
 	FColoredCascadeShadowVS() {}
@@ -670,7 +670,7 @@ class FColoredCascadeShadowPS : public FMeshMaterialShader
 public:
 	static bool ShouldCompilePermutation(const FMeshMaterialShaderPermutationParameters& Parameters)
 	{
-		return IsTranslucentBlendMode(Parameters.MaterialParameters.BlendMode) && IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+		return Parameters.MaterialParameters.BlendMode == BLEND_Translucent && IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
 	}
 
 	FColoredCascadeShadowPS() {}
@@ -706,9 +706,11 @@ public:
 		const FMaterial& Material = MeshBatch.MaterialRenderProxy->GetMaterialWithFallback(FeatureLevel, FallbackMaterialRenderProxyPtr);
 		const FMaterialRenderProxy& MaterialRenderProxy = FallbackMaterialRenderProxyPtr ? *FallbackMaterialRenderProxyPtr : *MeshBatch.MaterialRenderProxy;
 
-		// Additive and modulate materials do not block light.
+		// Only standard Translucent materials have an unambiguous opacity + tint interpretation.
+		// AlphaComposite uses premultiplied RGB and may include additive color, so it cannot be
+		// converted reliably into colored light transmittance.
 		const EBlendMode BlendMode = Material.GetBlendMode();
-		if (BlendMode != BLEND_Translucent && BlendMode != BLEND_AlphaComposite)
+		if (BlendMode != BLEND_Translucent)
 		{
 			return;
 		}
