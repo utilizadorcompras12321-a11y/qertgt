@@ -31,7 +31,6 @@ namespace ColoredCascadeShadows
 	/** Global kill switch (r.ColoredCascadeShadows.Enable). The per light toggle is still required. */
 	bool IsGloballyEnabled();
 	int32 GetMaxCascades();
-	int32 GetCellResolution();
 	/** r.ColoredCascadeShadows.Debug (0 = off). */
 	int32 GetDebugLevel();
 	/** True roughly every 2 seconds when Debug > 0, to throttle logging. */
