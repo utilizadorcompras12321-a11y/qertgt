@@ -165,6 +165,7 @@ struct FColoredCascadeShadowEntry
 {
 	const FProjectedShadowInfo* Shadow = nullptr;
 	int32 CellIndex = INDEX_NONE;
+	FIntRect CellRect;
 };
 
 /** Information about a visible light which isn't view-specific. */
@@ -182,7 +183,6 @@ public:
 	TArray<FProjectedShadowInfo*,SceneRenderingAllocator> ShadowsToProject;
 	/** Cascades selected for the colored translucent shadow pass. */
 	TArray<FColoredCascadeShadowEntry, SceneRenderingAllocator> ColoredCascadeShadows;
-	FIntPoint ColoredCascadeCellSize;
 	TArray<FProjectedShadowInfo*,SceneRenderingAllocator> CapsuleShadowsToProject;
 	TArray<FProjectedShadowInfo*,SceneRenderingAllocator> RSMsToProject;
 
