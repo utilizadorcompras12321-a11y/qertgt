@@ -152,6 +152,14 @@ static FMatrix GetScreenToColoredShadowMatrix(const FProjectedShadowInfo* Shadow
 
 BEGIN_SHADER_PARAMETER_STRUCT(FColoredCascadeCasterPassParameters, )
 	RENDER_TARGET_BINDING_SLOTS()
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture0, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture1, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture2, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture3, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture4, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture5, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture6, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture7, ERHIAccess::SRVGraphics)
 END_SHADER_PARAMETER_STRUCT()
 
 FRDGTextureRef RenderColoredCascadeShadowTint(
@@ -272,44 +280,50 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 		CasterParameters->RenderTargets[0] = FRenderTargetBinding(AtlasTexture, ERenderTargetLoadAction::EClear);
 		CasterParameters->RenderTargets[1] = FRenderTargetBinding(DepthAtlasTexture, ERenderTargetLoadAction::EClear);
 
+		// Register every original opaque CSM depth target with RDG. This declares the caster
+		// pass's SRV dependencies and lets RDG order the pass after the shadow-depth producers.
+		TArray<FRDGTextureRef, SceneRenderingAllocator> OpaqueDepthTextures;
+		OpaqueDepthTextures.Reserve(Entries.Num());
+		check(Entries.Num() <= ColoredCascadeShadows::MaxCells);
+		for (int32 EntryIndex = 0; EntryIndex < Entries.Num(); ++EntryIndex)
+		{
+			const FProjectedShadowInfo* Shadow = Entries[EntryIndex].Shadow;
+			check(Shadow && Shadow->RenderTargets.DepthTarget);
+			FRDGTextureRef OpaqueDepthTexture = GraphBuilder.RegisterExternalTexture(
+				Shadow->RenderTargets.DepthTarget,
+				TEXT("ColoredCascadeOpaqueShadowDepth"));
+			check(OpaqueDepthTexture);
+			OpaqueDepthTextures.Add(OpaqueDepthTexture);
+
+			switch (EntryIndex)
+			{
+			case 0: CasterParameters->OpaqueDepthTexture0 = OpaqueDepthTexture; break;
+			case 1: CasterParameters->OpaqueDepthTexture1 = OpaqueDepthTexture; break;
+			case 2: CasterParameters->OpaqueDepthTexture2 = OpaqueDepthTexture; break;
+			case 3: CasterParameters->OpaqueDepthTexture3 = OpaqueDepthTexture; break;
+			case 4: CasterParameters->OpaqueDepthTexture4 = OpaqueDepthTexture; break;
+			case 5: CasterParameters->OpaqueDepthTexture5 = OpaqueDepthTexture; break;
+			case 6: CasterParameters->OpaqueDepthTexture6 = OpaqueDepthTexture; break;
+			case 7: CasterParameters->OpaqueDepthTexture7 = OpaqueDepthTexture; break;
+			default: checkNoEntry(); break;
+			}
+		}
+
 		GraphBuilder.AddPass(
 			RDG_EVENT_NAME("ColoredCascadeShadowMaps %d cascades", NumCells),
 			CasterParameters,
 			ERDGPassFlags::Raster,
-			[Renderer, Entries, bLog, AtlasSize](FRHICommandList& RHICmdList)
+			[Renderer, Entries, OpaqueDepthTextures, bLog, AtlasSize](FRHICommandList& RHICmdList)
 		{
-			// The caster pixel shader samples the original opaque CSM depth. These shadow maps are
-			// produced by the legacy shadow renderer, outside RDG, so explicitly transition each
-			// unique pooled depth target to graphics SRV before any cascade samples it.
-			TSet<IPooledRenderTarget*, DefaultKeyFuncs<IPooledRenderTarget*>, SceneRenderingSetAllocator> OpaqueDepthTargets;
-			TArray<FRHITransitionInfo, SceneRenderingAllocator> OpaqueDepthTransitions;
-			for (const FColoredCascadeShadowEntry& Entry : Entries)
+			for (int32 EntryIndex = 0; EntryIndex < Entries.Num(); ++EntryIndex)
 			{
-				IPooledRenderTarget* OpaqueDepthTarget = Entry.Shadow->RenderTargets.DepthTarget;
-				if (OpaqueDepthTarget)
-				{
-					bool bAlreadyAdded = false;
-					OpaqueDepthTargets.Emplace(OpaqueDepthTarget, &bAlreadyAdded);
-					if (!bAlreadyAdded)
-					{
-						OpaqueDepthTransitions.Add(FRHITransitionInfo(
-							OpaqueDepthTarget->GetShaderResourceRHI(),
-							ERHIAccess::Unknown,
-							ERHIAccess::SRVMask));
-					}
-				}
-			}
-			if (OpaqueDepthTransitions.Num() > 0)
-			{
-				RHICmdList.Transition(OpaqueDepthTransitions);
-			}
-
-			for (const FColoredCascadeShadowEntry& Entry : Entries)
-			{
+				const FColoredCascadeShadowEntry& Entry = Entries[EntryIndex];
 				const FIntRect& CellRect = Entry.CellRect;
+				check(OpaqueDepthTextures[EntryIndex]);
 
 				// Const cast: ShadowsToProject stores non const pointers, the entry only keeps them const for the projection pass.
-				const_cast<FProjectedShadowInfo*>(Entry.Shadow)->RenderColoredTranslucencyDepths(RHICmdList, Renderer, CellRect);
+				const_cast<FProjectedShadowInfo*>(Entry.Shadow)->RenderColoredTranslucencyDepths(
+					RHICmdList, Renderer, CellRect, OpaqueDepthTextures[EntryIndex]->GetRHI());
 			}
 
 			if (bLog)
