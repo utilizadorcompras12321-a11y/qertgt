@@ -289,9 +289,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 		{
 			const FProjectedShadowInfo* Shadow = Entries[EntryIndex].Shadow;
 			check(Shadow && Shadow->RenderTargets.DepthTarget);
-			FRDGTextureRef OpaqueDepthTexture = GraphBuilder.RegisterExternalTexture(
-				Shadow->RenderTargets.DepthTarget,
-				TEXT("ColoredCascadeOpaqueShadowDepth"));
+			FRDGTextureRef OpaqueDepthTexture = GraphBuilder.RegisterExternalTexture(Shadow->RenderTargets.DepthTarget);
 			check(OpaqueDepthTexture);
 			OpaqueDepthTextures.Add(OpaqueDepthTexture);
 
