@@ -44,20 +44,10 @@ void MainVS(
 		ShadowClipPos.w = 1.0f;
 	}
 
-	// Match the native CSM depth encoding, including its constant and slope-scaled bias.
-	const float3 ShadowViewDirection = float3(
-		ColoredCascadePass.ViewMatrix[0].z,
-		ColoredCascadePass.ViewMatrix[1].z,
-		ColoredCascadePass.ViewMatrix[2].z);
-	const float3 WorldNormal = VertexFactoryGetWorldNormal(Input, VFIntermediates);
-	const float NoL = abs(dot(ShadowViewDirection, WorldNormal));
-	const float MaxSlopeDepthBias = ColoredCascadePass.ShadowParams.z;
-	const float Slope = clamp(
-		NoL > 0.0f ? sqrt(saturate(1.0f - NoL * NoL)) / NoL : MaxSlopeDepthBias,
-		0.0f,
-		MaxSlopeDepthBias);
-	const float DepthBias = ColoredCascadePass.ShadowParams.x + ColoredCascadePass.ShadowParams.y * Slope;
-	Output.ShadowDepth = max(ShadowClipPos.z * ColoredCascadePass.ShadowParams.w + DepthBias, 0.0f);
+	// Match ShadowDepthVertexShader.usf: linear normalized depth plus the native constant depth bias.
+	Output.ShadowDepth = max(
+		ShadowClipPos.z * ColoredCascadePass.ShadowParams.y + ColoredCascadePass.ShadowParams.x,
+		0.0f);
 	OutPosition = float4(ShadowClipPos.xy, 0.5f * ShadowClipPos.w, ShadowClipPos.w);
 
 	Output.FactoryInterpolants = VertexFactoryGetInterpolantsVSToPS(Input, VFIntermediates, VertexParameters);
