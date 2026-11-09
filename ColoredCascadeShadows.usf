@@ -1,11 +1,11 @@
 // Colored translucent cascaded shadow maps (custom addition for UE 4.27.2).
-// Full screen pass: atlas (RGB transmittance + A nearest translucent depth) -> screen space RGB tint for opaque receivers.
+// Full screen pass: atlas (RGB transmittance + farthest translucent depth) -> screen space RGB tint for opaque receivers.
 
 #include "Common.ush"
 #include "DeferredShadingCommon.ush"
 
 Texture2D AtlasTexture;       // RGB colored transmittance
-Texture2D DepthAtlasTexture;  // R: nearest translucent depth (32 bit)
+Texture2D DepthAtlasTexture;  // R: farthest translucent depth (32 bit)
 int NumCascades;
 float Strength;
 int DebugMode;
@@ -42,10 +42,11 @@ float3 SampleColoredShadow(int Cascade, float2 CellUV, float ReceiverZ)
 			const float2 Texel = clamp(Base + float2(X, Y), 0.0f, Cell.zw - 1.0f);
 			const int3 LoadPos = int3(int2(Cell.xy + Texel), 0);
 			const float4 Sample = AtlasTexture.Load(LoadPos);
-			const float CasterDepth = DepthAtlasTexture.Load(LoadPos).r;
+			const float FarthestCasterDepth = DepthAtlasTexture.Load(LoadPos).r;
 
-			// CasterDepth: nearest translucent depth (1 = nothing). The receiver must be behind it.
-			const float Behind = saturate((ReceiverZ - CasterDepth - Bias) * InvTransition);
+			// Only apply the aggregate tint when the receiver is behind every translucent caster in this texel.
+			// This conservative bound prevents surfaces behind the receiver from incorrectly tinting it.
+			const float Behind = saturate((ReceiverZ - FarthestCasterDepth - Bias) * InvTransition);
 			const float3 Tint = lerp(1.0f, Sample.rgb, Behind);
 
 			const float Weight = (X == 0 ? 1.0f - Frac.x : Frac.x) * (Y == 0 ? 1.0f - Frac.y : Frac.y);
@@ -65,7 +66,7 @@ float3 EvaluateCascade(int Cascade, float4 ScreenPosition)
 }
 
 // Debug helper: raw atlas sample that the given cascade would use for this pixel.
-void DebugCascadeSample(int Cascade, float4 ScreenPosition, out float ReceiverZ, out float2 UV, out float CasterDepth)
+void DebugCascadeSample(int Cascade, float4 ScreenPosition, out float ReceiverZ, out float2 UV, out float FarthestCasterDepth)
 {
 	float4 ShadowPosition = mul(ScreenPosition, ScreenToShadow[Cascade]);
 	ReceiverZ = ShadowPosition.z;
@@ -74,7 +75,7 @@ void DebugCascadeSample(int Cascade, float4 ScreenPosition, out float ReceiverZ,
 
 	const float4 Cell = CellRect[Cascade];
 	const float2 Texel = clamp(floor(UV * Cell.zw), 0.0f, Cell.zw - 1.0f);
-	CasterDepth = DepthAtlasTexture.Load(int3(int2(Cell.xy + Texel), 0)).r;
+	FarthestCasterDepth = DepthAtlasTexture.Load(int3(int2(Cell.xy + Texel), 0)).r;
 }
 
 void TintMainPS(
