@@ -522,7 +522,8 @@ private:
 		FRHITexture* LightingChannelTexture,
 		const struct FHairStrandsVisibilityViews* InHairVisibilityViews,
 		bool bRenderOverlap,
-		bool bIssueDrawEvent);
+		bool bIssueDrawEvent,
+		FRHITexture* ColoredCascadeShadowTintTexture = nullptr);
 
 	void RenderLight(
 		FRDGBuilder& GraphBuilder,
@@ -533,7 +534,8 @@ private:
 		FRDGTextureRef ScreenShadowMaskTexture,
 		FRDGTextureRef LightingChannelsTexture,
 		const FHairStrandsVisibilityViews* InHairVisibilityViews,
-		bool bRenderOverlap);
+		bool bRenderOverlap,
+		FRDGTextureRef ColoredCascadeShadowTintTexture = nullptr);
 
 	void RenderLightsForHair(
 		FRDGBuilder& GraphBuilder,
