@@ -1442,7 +1442,7 @@ public:
 	inline float GetShadowSharpen() const { return ShadowSharpen; }
 
 	/** Whether this directional light uses the optional RGB-transmittance cascade pass. */
-	inline bool CastsColoredTranslucentCascadeShadows() const { return bCastColoredTranslucentCascadeShadows; }
+	virtual bool CastsColoredTranslucentCascadeShadows() const { return bCastColoredTranslucentCascadeShadows; }
 
 	inline float GetContactShadowLength() const { return ContactShadowLength; }
 	inline bool IsContactShadowLengthInWS() const { return bContactShadowLengthInWS; }
