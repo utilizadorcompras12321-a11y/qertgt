@@ -34,12 +34,6 @@ static TAutoConsoleVariable<int32> CVarColoredCascadeShadowsMaxCascades(
 	TEXT("Number of cascades (counted from the camera) that render colored translucent shadows. Clamped to 1..4."),
 	ECVF_RenderThreadSafe);
 
-static TAutoConsoleVariable<int32> CVarColoredCascadeShadowsResolution(
-	TEXT("r.ColoredCascadeShadows.Resolution"),
-	1024,
-	TEXT("Resolution of one colored translucent shadow cascade (square). Clamped to 128..4096."),
-	ECVF_RenderThreadSafe);
-
 static TAutoConsoleVariable<float> CVarColoredCascadeShadowsDepthBias(
 	TEXT("r.ColoredCascadeShadows.DepthBias"),
 	5.0f,
@@ -92,10 +86,6 @@ namespace ColoredCascadeShadows
 		return GetDebugLevel() > 0 && ((Counters[Site & 7]++ % 120) == 0);
 	}
 
-	int32 GetCellResolution()
-	{
-		return FMath::Clamp(CVarColoredCascadeShadowsResolution.GetValueOnRenderThread(), 128, 4096);
-	}
 }
 
 // ------------------------------------------------------------------------------------------------------------------------------------
@@ -193,7 +183,6 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 
 	// Pick the cascades. ShadowsToProject is already known here (it is filled in InitViews); it is sorted by split index.
 	const int32 MaxCascadesPerView = ColoredCascadeShadows::GetMaxCascades();
-	const int32 CellResolution = ColoredCascadeShadows::GetCellResolution();
 
 	TArray<int32, TInlineAllocator<2>> CascadesPerView;
 	CascadesPerView.SetNumZeroed(SceneRenderer.Views.Num());
@@ -234,6 +223,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 		FColoredCascadeShadowEntry& Entry = VisibleLightInfo.ColoredCascadeShadows.AddDefaulted_GetRef();
 		Entry.Shadow = Shadow;
 		Entry.CellIndex = VisibleLightInfo.ColoredCascadeShadows.Num() - 1;
+		Entry.CellRect = FIntRect(0, 0, Shadow->ResolutionX, Shadow->ResolutionY);
 	}
 
 	const int32 NumCells = VisibleLightInfo.ColoredCascadeShadows.Num();
@@ -244,10 +234,18 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 
 	RDG_EVENT_SCOPE(GraphBuilder, "ColoredCascadeShadows");
 
-	const int32 NumColumns = FMath::Min(NumCells, ColoredCascadeShadows::AtlasColumns);
-	const int32 NumRows = FMath::DivideAndRoundUp(NumCells, ColoredCascadeShadows::AtlasColumns);
-	VisibleLightInfo.ColoredCascadeCellSize = FIntPoint(CellResolution, CellResolution);
-	const FIntPoint AtlasSize(NumColumns * CellResolution, NumRows * CellResolution);
+	// Pack variable-sized cells vertically. Each cell uses the exact resolution allocated to its source CSM cascade.
+	int32 AtlasWidth = 1;
+	int32 AtlasHeight = 0;
+	for (FColoredCascadeShadowEntry& Entry : VisibleLightInfo.ColoredCascadeShadows)
+	{
+		const int32 CellWidth = FMath::Max(Entry.Shadow->ResolutionX, 1u);
+		const int32 CellHeight = FMath::Max(Entry.Shadow->ResolutionY, 1u);
+		Entry.CellRect = FIntRect(0, AtlasHeight, CellWidth, AtlasHeight + CellHeight);
+		AtlasWidth = FMath::Max(AtlasWidth, CellWidth);
+		AtlasHeight += CellHeight;
+	}
+	const FIntPoint AtlasSize(AtlasWidth, AtlasHeight);
 
 	// Color atlas: RGB colored transmittance (cleared to 1). Depth atlas: nearest translucent depth in 32 bit float (cleared to 1 = far plane).
 	// The depth must not be 16 bit: it is normalized by the cascade depth range (thousands of units), so half floats cannot resolve small distances.
@@ -270,13 +268,11 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			RDG_EVENT_NAME("ColoredCascadeShadowMaps %d cascades", NumCells),
 			CasterParameters,
 			ERDGPassFlags::Raster,
-			[Renderer, Entries, CellResolution, bLog, AtlasSize](FRHICommandList& RHICmdList)
+			[Renderer, Entries, bLog, AtlasSize](FRHICommandList& RHICmdList)
 		{
 			for (const FColoredCascadeShadowEntry& Entry : Entries)
 			{
-				const int32 CellX = Entry.CellIndex % ColoredCascadeShadows::AtlasColumns;
-				const int32 CellY = Entry.CellIndex / ColoredCascadeShadows::AtlasColumns;
-				const FIntRect CellRect(CellX * CellResolution, CellY * CellResolution, (CellX + 1) * CellResolution, (CellY + 1) * CellResolution);
+				const FIntRect& CellRect = Entry.CellRect;
 
 				// Const cast: ShadowsToProject stores non const pointers, the entry only keeps them const for the projection pass.
 				const_cast<FProjectedShadowInfo*>(Entry.Shadow)->RenderColoredTranslucencyDepths(RHICmdList, Renderer, CellRect);
@@ -298,7 +294,6 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 	const float DepthBiasWorld = FMath::Max(CVarColoredCascadeShadowsDepthBias.GetValueOnRenderThread(), 0.0f);
 	const float TransitionWorld = FMath::Max(CVarColoredCascadeShadowsTransition.GetValueOnRenderThread(), 1.0f);
 	const float Strength = FMath::Clamp(CVarColoredCascadeShadowsStrength.GetValueOnRenderThread(), 0.0f, 1.0f);
-	const FIntPoint CellSize = VisibleLightInfo.ColoredCascadeCellSize;
 
 	for (int32 ViewIndex = 0; ViewIndex < SceneRenderer.Views.Num(); ++ViewIndex)
 	{
@@ -323,15 +318,13 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 				continue;
 			}
 
-			const int32 CellX = Entry.CellIndex % ColoredCascadeShadows::AtlasColumns;
-			const int32 CellY = Entry.CellIndex / ColoredCascadeShadows::AtlasColumns;
 
 			const FShadowCascadeSettings& Cascade = Shadow->CascadeSettings;
 			const float InvFadePlaneLength = Cascade.FadePlaneLength > 0.0f ? 1.0f / Cascade.FadePlaneLength : 0.0f;
 			const float InvDepthRange = Shadow->InvMaxSubjectDepth;
 
 			PassParameters->ScreenToShadow[NumCascades] = GetScreenToColoredShadowMatrix(Shadow, View);
-			PassParameters->CellRect[NumCascades] = FVector4(CellX * CellSize.X, CellY * CellSize.Y, CellSize.X, CellSize.Y);
+			PassParameters->CellRect[NumCascades] = FVector4(Entry.CellRect.Min.X, Entry.CellRect.Min.Y, Entry.CellRect.Width(), Entry.CellRect.Height());
 			PassParameters->SplitParams[NumCascades] = FVector4(Cascade.SplitNear, Cascade.SplitFar, Cascade.FadePlaneOffset, InvFadePlaneLength);
 			PassParameters->DepthParams[NumCascades] = FVector4(DepthBiasWorld * InvDepthRange, 1.0f / FMath::Max(TransitionWorld * InvDepthRange, 1e-6f), 0.0f, 0.0f);
 
