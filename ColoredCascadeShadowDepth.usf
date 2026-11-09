@@ -17,6 +17,7 @@ struct FColoredShadowVSToPS
 {
 	FVertexFactoryInterpolantsVSToPS FactoryInterpolants;
 	float ShadowDepth : TEXCOORD6;
+	float HardwareDepth : TEXCOORD7;
 };
 
 void MainVS(
@@ -38,6 +39,7 @@ void MainVS(
 	// The depth is passed as an interpolant instead of through SV_POSITION: no depth buffer is bound, and this way casters in front of
 	// the cascade near plane are clamped (bClampToNearPlane) instead of being clipped.
 	Output.ShadowDepth = max(ClipPos.z * ColoredCascadePass.InvMaxSubjectDepth, 0.0f);
+	Output.HardwareDepth = saturate(ClipPos.z / max(ClipPos.w, 1e-6f));
 	OutPosition = float4(ClipPos.xy, 0.5f * ClipPos.w, ClipPos.w);
 
 	Output.FactoryInterpolants = VertexFactoryGetInterpolantsVSToPS(Input, VFIntermediates, VertexParameters);
@@ -56,6 +58,13 @@ void MainPS(
 	CalcMaterialParameters(MaterialParameters, PixelMaterialInputs, SvPosition, 1);
 
 	const float Opacity = saturate(GetMaterialOpacity(PixelMaterialInputs));
+
+	// Reject translucent casters hidden behind opaque geometry in the original CSM.
+	// UE uses reversed Z: larger device depth is closer to the light.
+	const float2 LocalCascadeUV = (SvPosition.xy - ColoredCascadePass.AtlasCellRect.xy) / max(ColoredCascadePass.AtlasCellRect.zw, 1.0f.xx);
+	const float2 OpaqueDepthUV = LocalCascadeUV * ColoredCascadePass.OpaqueShadowDepthUVScaleBias.xy + ColoredCascadePass.OpaqueShadowDepthUVScaleBias.zw;
+	const float OpaqueDepth = ColoredCascadePass.OpaqueShadowDepthTexture.SampleLevel(ColoredCascadePass.OpaqueShadowDepthTextureSampler, OpaqueDepthUV, 0).r;
+	clip(Inputs.HardwareDepth - OpaqueDepth + 1e-5f);
 
 	// Practically invisible surfaces neither tint nor register a depth.
 	clip(Opacity - 0.02f);
