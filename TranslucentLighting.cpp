@@ -640,8 +640,9 @@ BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT(FColoredCascadePassUniformParameters,)
 	SHADER_PARAMETER(FVector4, OpaqueShadowDepthUVScaleBias)
 	SHADER_PARAMETER(FVector4, AtlasCellRect)
 	SHADER_PARAMETER(FMatrix, ProjectionMatrix)
+	SHADER_PARAMETER(FMatrix, ViewMatrix)
+	SHADER_PARAMETER(FVector4, ShadowParams)
 	SHADER_PARAMETER(float, bClampToNearPlane)
-	SHADER_PARAMETER(float, InvMaxSubjectDepth)
 END_GLOBAL_SHADER_PARAMETER_STRUCT()
 
 IMPLEMENT_GLOBAL_SHADER_PARAMETER_STRUCT(FColoredCascadePassUniformParameters, "ColoredCascadePass");
@@ -770,8 +771,9 @@ void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHIC
 		FSceneRenderTargets& SceneRenderTargets = FSceneRenderTargets::Get(RHICmdList);
 		SetupSceneTextureUniformParameters(SceneRenderTargets, ShadowDepthView->FeatureLevel, ESceneTextureSetupMode::None, PassParameters.SceneTextures);
 		PassParameters.ProjectionMatrix = FTranslationMatrix(PreShadowTranslation - ShadowDepthView->ViewMatrices.GetPreViewTranslation()) * SubjectAndReceiverMatrix;
+		PassParameters.ViewMatrix = ShadowViewMatrix;
+		PassParameters.ShadowParams = FVector4(GetShaderDepthBias(), GetShaderSlopeDepthBias(), GetShaderMaxSlopeDepthBias(), InvMaxSubjectDepth);
 		PassParameters.bClampToNearPlane = 1.0f;
-		PassParameters.InvMaxSubjectDepth = InvMaxSubjectDepth;
 
 		// Sample the original opaque CSM depth atlas. X/Y include the atlas tile offset;
 		// BorderSize is excluded from the actual rendered shadow region.
