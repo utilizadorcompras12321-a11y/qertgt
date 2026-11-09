@@ -295,7 +295,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 						OpaqueDepthTransitions.Add(FRHITransitionInfo(
 							OpaqueDepthTarget->GetShaderResourceRHI(),
 							ERHIAccess::Unknown,
-							ERHIAccess::SRVGraphics));
+							ERHIAccess::SRVMask));
 					}
 				}
 			}
