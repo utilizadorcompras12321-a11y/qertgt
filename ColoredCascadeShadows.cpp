@@ -190,12 +190,11 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 		UE_LOG(LogTemp, Warning, TEXT("[ColoredCSM] Light %d (%s): toggle on, ShadowsToProject=%d"), LightSceneInfo.Id, *LightProxy->GetComponentName().ToString(), VisibleLightInfo.ShadowsToProject.Num());
 	}
 
-	// Reuse every allocated regular directional CSM cascade. The four-entry per-view
-	// shader arrays match UE4.27's native maximum; there is deliberately no separate
-	// ColoredCSM cascade-count setting.
-	// Sort explicitly near-to-far because ShadowsToProject is not guaranteed to retain split order.
-	// Five entries per view cover four regular cascades plus the optional far cascade.
-	int32 ViewCascadeCounts[4] = {};
+	// Reuse allocated directional CSM cascades. Shader arrays hold four regular splits
+	// plus one optional far split. The per-view counter is sized from the actual renderer
+	// views; auxiliary views must not index a fixed split-screen-sized array.
+	TArray<int32, TInlineAllocator<8>> ViewCascadeCounts;
+	ViewCascadeCounts.Init(0, SceneRenderer.Views.Num());
 	TArray<FProjectedShadowInfo*, TInlineAllocator<8>> SortedShadows;
 	SortedShadows.Append(VisibleLightInfo.ShadowsToProject);
 	SortedShadows.Sort([](const FProjectedShadowInfo& A, const FProjectedShadowInfo& B)
@@ -218,7 +217,8 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 				Shadow->CascadeSettings.bFarShadowCascade ? 1 : 0, Shadow->DependentView != nullptr ? 1 : 0, Shadow->ShadowDepthView != nullptr ? 1 : 0);
 		}
 
-		if (!Shadow->bAllocated
+		if (Shadow == nullptr
+			|| !Shadow->bAllocated
 			|| !Shadow->IsWholeSceneDirectionalShadow()
 			|| Shadow->bRayTracedDistanceField
 			|| Shadow->bReflectiveShadowmap
@@ -234,14 +234,15 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			continue;
 		}
 
-		// UE4 split-screen has up to four player views. Each view gets four regular splits
-		// and one optional far split. Reject unsupported view/cascade counts explicitly.
-		checkf(ViewIndex < UE_ARRAY_COUNT(ViewCascadeCounts),
-			TEXT("Colored CSM currently supports at most four views"));
-		checkf(++ViewCascadeCounts[ViewIndex] <= ColoredCascadeShadows::MaxCascades,
-			TEXT("Colored CSM exceeded five cascades for one view"));
-		checkf(VisibleLightInfo.ColoredCascadeShadows.Num() < ColoredCascadeShadows::MaxCells,
-			TEXT("Colored CSM exceeded its 20-cell atlas capacity"));
+		// Runtime guards are required here: check/checkf may be compiled out in Shipping.
+		if (!ViewCascadeCounts.IsValidIndex(ViewIndex)
+			|| ViewCascadeCounts[ViewIndex] >= ColoredCascadeShadows::MaxCascades
+			|| VisibleLightInfo.ColoredCascadeShadows.Num() >= ColoredCascadeShadows::MaxCells
+			|| Shadow->RenderTargets.DepthTarget == nullptr)
+		{
+			continue;
+		}
+		++ViewCascadeCounts[ViewIndex];
 
 		FColoredCascadeShadowEntry& Entry = VisibleLightInfo.ColoredCascadeShadows.AddDefaulted_GetRef();
 		Entry.Shadow = Shadow;
@@ -257,7 +258,8 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 
 	RDG_EVENT_SCOPE(GraphBuilder, "ColoredCascadeShadows");
 
-	// Pack variable-sized cells in up to four columns. Each cell keeps the exact resolution allocated to its source CSM cascade.
+	// Pack variable-sized cells without rescaling them. The RHI limit is platform-specific;
+	// a fixed 4x5 grid can exceed it (for example, 16384x20480 with 4096px cascades).
 	uint32 MaxCellWidth = 1;
 	uint32 MaxCellHeight = 1;
 	for (const FColoredCascadeShadowEntry& Entry : VisibleLightInfo.ColoredCascadeShadows)
@@ -265,7 +267,28 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 		MaxCellWidth = FMath::Max(MaxCellWidth, Entry.Shadow->ResolutionX);
 		MaxCellHeight = FMath::Max(MaxCellHeight, Entry.Shadow->ResolutionY);
 	}
-	const int32 AtlasColumns = FMath::Min(ColoredCascadeShadows::AtlasColumns, NumCells);
+	const int32 MaxTextureDimension = FMath::Max(static_cast<int32>(GetMax2DTextureDimension()), 1);
+	const int32 ColumnsThatFit = MaxCellWidth <= static_cast<uint32>(MaxTextureDimension)
+		? MaxTextureDimension / static_cast<int32>(MaxCellWidth) : 0;
+	const int32 RowsThatFit = MaxCellHeight <= static_cast<uint32>(MaxTextureDimension)
+		? MaxTextureDimension / static_cast<int32>(MaxCellHeight) : 0;
+	const int32 AtlasColumns = FMath::Min3(ColoredCascadeShadows::AtlasColumns, NumCells, ColumnsThatFit);
+	if (AtlasColumns <= 0 || RowsThatFit <= 0)
+	{
+		VisibleLightInfo.ColoredCascadeShadows.Reset();
+		return nullptr;
+	}
+	const int32 MaxCellsThatFit = FMath::Min(ColoredCascadeShadows::MaxCells, AtlasColumns * RowsThatFit);
+	if (NumCells > MaxCellsThatFit)
+	{
+		if (bLog)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[ColoredCSM] Atlas limit: keeping %d of %d cascades at native resolution (RHI max %d, cell max %ux%u)"),
+				MaxCellsThatFit, NumCells, MaxTextureDimension, MaxCellWidth, MaxCellHeight);
+		}
+		VisibleLightInfo.ColoredCascadeShadows.SetNum(MaxCellsThatFit, EAllowShrinking::No);
+		NumCells = MaxCellsThatFit;
+	}
 	const int32 AtlasRows = FMath::DivideAndRoundUp(NumCells, AtlasColumns);
 	for (FColoredCascadeShadowEntry& Entry : VisibleLightInfo.ColoredCascadeShadows)
 	{
@@ -299,13 +322,19 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 		// pass's SRV reads and lets RDG manage the required resource access transitions.
 		TArray<FRDGTextureRef> OpaqueDepthTextures;
 		OpaqueDepthTextures.Reserve(Entries.Num());
-		check(Entries.Num() <= ColoredCascadeShadows::MaxCells);
 		for (int32 EntryIndex = 0; EntryIndex < Entries.Num(); ++EntryIndex)
 		{
 			const FProjectedShadowInfo* Shadow = Entries[EntryIndex].Shadow;
-			check(Shadow && Shadow->RenderTargets.DepthTarget);
+			if (Shadow == nullptr || Shadow->RenderTargets.DepthTarget == nullptr
+				|| EntryIndex >= ColoredCascadeShadows::MaxCells)
+			{
+				continue;
+			}
 			FRDGTextureRef OpaqueDepthTexture = GraphBuilder.RegisterExternalTexture(Shadow->RenderTargets.DepthTarget, TEXT("ColoredCascadeOpaqueShadowDepth"));
-			check(OpaqueDepthTexture);
+			if (OpaqueDepthTexture == nullptr)
+			{
+				continue;
+			}
 			OpaqueDepthTextures.Add(OpaqueDepthTexture);
 
 			switch (EntryIndex)
@@ -334,6 +363,15 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			}
 		}
 
+		if (OpaqueDepthTextures.Num() != Entries.Num())
+		{
+			if (bLog)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[ColoredCSM] Skipping caster pass: one or more opaque cascade depth textures could not be registered"));
+			}
+			return nullptr;
+		}
+
 		GraphBuilder.AddPass(
 			RDG_EVENT_NAME("ColoredCascadeShadowMaps %d cascades", NumCells),
 			CasterParameters,
@@ -344,7 +382,10 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			{
 				const FColoredCascadeShadowEntry& Entry = Entries[EntryIndex];
 				const FIntRect& CellRect = Entry.CellRect;
-				check(OpaqueDepthTextures[EntryIndex]);
+				if (!OpaqueDepthTextures.IsValidIndex(EntryIndex) || OpaqueDepthTextures[EntryIndex] == nullptr)
+				{
+					continue;
+				}
 
 				// Const cast: ShadowsToProject stores non const pointers, the entry only keeps them const for the projection pass.
 				const_cast<FProjectedShadowInfo*>(Entry.Shadow)->RenderColoredTranslucencyDepths(
