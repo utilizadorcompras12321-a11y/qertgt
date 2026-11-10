@@ -28,12 +28,6 @@ static TAutoConsoleVariable<int32> CVarColoredCascadeShadowsEnable(
 	TEXT(" 0: off, 1: on (default)"),
 	ECVF_RenderThreadSafe);
 
-static TAutoConsoleVariable<int32> CVarColoredCascadeShadowsMaxCascades(
-	TEXT("r.ColoredCascadeShadows.MaxCascades"),
-	3,
-	TEXT("Number of cascades (counted from the camera) that render colored translucent shadows. Clamped to 1..4."),
-	ECVF_RenderThreadSafe);
-
 static TAutoConsoleVariable<float> CVarColoredCascadeShadowsDepthBias(
 	TEXT("r.ColoredCascadeShadows.DepthBias"),
 	5.0f,
@@ -68,11 +62,6 @@ namespace ColoredCascadeShadows
 	bool IsGloballyEnabled()
 	{
 		return CVarColoredCascadeShadowsEnable.GetValueOnRenderThread() != 0;
-	}
-
-	int32 GetMaxCascades()
-	{
-		return FMath::Clamp(CVarColoredCascadeShadowsMaxCascades.GetValueOnRenderThread(), 1, MaxCascades);
 	}
 
 	int32 GetDebugLevel()
@@ -189,19 +178,16 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 		UE_LOG(LogTemp, Warning, TEXT("[ColoredCSM] Light %d (%s): toggle on, ShadowsToProject=%d"), LightSceneInfo.Id, *LightProxy->GetComponentName().ToString(), VisibleLightInfo.ShadowsToProject.Num());
 	}
 
-	// Pick cascades in explicit near-to-far split order. Do not rely on ShadowsToProject
-	// retaining that order: its order can change as shadow subjects/views are assembled.
-	const int32 MaxCascadesPerView = ColoredCascadeShadows::GetMaxCascades();
-
+	// Reuse every allocated regular directional CSM cascade. The four-entry per-view
+	// shader arrays match UE4.27's native maximum; there is deliberately no separate
+	// ColoredCSM cascade-count setting.
+	// Sort explicitly near-to-far because ShadowsToProject is not guaranteed to retain split order.
 	TArray<FProjectedShadowInfo*, TInlineAllocator<8>> SortedShadows;
 	SortedShadows.Append(VisibleLightInfo.ShadowsToProject);
 	SortedShadows.Sort([](const FProjectedShadowInfo& A, const FProjectedShadowInfo& B)
 	{
 		return A.CascadeSettings.ShadowSplitIndex < B.CascadeSettings.ShadowSplitIndex;
 	});
-
-	TArray<int32, TInlineAllocator<2>> CascadesPerView;
-	CascadesPerView.SetNumZeroed(SceneRenderer.Views.Num());
 
 	for (FProjectedShadowInfo* Shadow : SortedShadows)
 	{
@@ -210,11 +196,6 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			UE_LOG(LogTemp, Warning, TEXT("[ColoredCSM]   shadow split=%d allocated=%d wholeSceneDir=%d rtdf=%d far=%d dependentView=%d depthView=%d"),
 				Shadow->CascadeSettings.ShadowSplitIndex, (int32)Shadow->bAllocated, Shadow->IsWholeSceneDirectionalShadow() ? 1 : 0, (int32)Shadow->bRayTracedDistanceField,
 				Shadow->CascadeSettings.bFarShadowCascade ? 1 : 0, Shadow->DependentView != nullptr ? 1 : 0, Shadow->ShadowDepthView != nullptr ? 1 : 0);
-		}
-
-		if (VisibleLightInfo.ColoredCascadeShadows.Num() >= ColoredCascadeShadows::MaxCells)
-		{
-			break;
 		}
 
 		if (!Shadow->bAllocated
@@ -229,12 +210,17 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 		}
 
 		const int32 ViewIndex = SceneRenderer.Views.IndexOfByPredicate([Shadow](const FViewInfo& InView) { return &InView == Shadow->DependentView; });
-		if (ViewIndex == INDEX_NONE || CascadesPerView[ViewIndex] >= MaxCascadesPerView)
+		if (ViewIndex == INDEX_NONE)
 		{
 			continue;
 		}
 
-		CascadesPerView[ViewIndex]++;
+		// UE4.27 has at most four regular directional CSM splits per view and this
+		// pass has four shader slots per view (eight atlas cells for two views).
+		// Treat exceeding that engine-defined capacity as an invariant violation,
+		// rather than silently dropping cascades.
+		checkf(VisibleLightInfo.ColoredCascadeShadows.Num() < ColoredCascadeShadows::MaxCells,
+			TEXT("Colored CSM exceeded its UE4.27 cascade/view capacity"));
 
 		FColoredCascadeShadowEntry& Entry = VisibleLightInfo.ColoredCascadeShadows.AddDefaulted_GetRef();
 		Entry.Shadow = Shadow;
