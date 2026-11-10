@@ -16,7 +16,7 @@
 struct FColoredShadowVSToPS
 {
 	FVertexFactoryInterpolantsVSToPS FactoryInterpolants;
-	noperspective float ShadowDepth : TEXCOORD6;
+	float ShadowDepth : TEXCOORD6;
 };
 
 void MainVS(
