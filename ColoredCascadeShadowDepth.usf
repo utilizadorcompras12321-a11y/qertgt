@@ -76,18 +76,16 @@ void MainPS(
 	// casters behind nearby receivers and makes their shadows vanish near the ground.
 	const float ShadowDepth = Inputs.ShadowDepth + TranslucentShadowStartOffset;
 
-	// The original opaque CSM depth already contains native constant/slope bias.
-	// Reapply the same bias only for this occlusion test so translucent casters
-	// hidden behind opaque geometry are still rejected in the same depth convention.
-	const float DepthSlope = max(abs(ddx(Inputs.ShadowDepth)), abs(ddy(Inputs.ShadowDepth)));
-	const float SlopeBias = min(DepthSlope * ColoredCascadePass.ShadowParams.y, ColoredCascadePass.ShadowParams.z);
-	const float OpaqueOcclusionDepth = ShadowDepth + ColoredCascadePass.ShadowParams.x + SlopeBias;
+	// Compare the unbiased translucent caster depth against the original opaque CSM depth.
+	// The opaque depth texture already contains the native rasterizer depth/slope bias.
+	// Applying the bias again to the caster moves it away from the light a second time
+	// and can reject panes close to the floor or other opaque receivers.
 	const float Opacity = saturate(GetMaterialOpacity(PixelMaterialInputs) * GetMaterialTranslucentShadowDensityScale());
 
 	const float2 LocalCascadeUV = (SvPosition.xy - ColoredCascadePass.CascadeRect.xy) / max(ColoredCascadePass.CascadeRect.zw, 1.0f.xx);
 	const float2 OpaqueDepthUV = LocalCascadeUV * ColoredCascadePass.OpaqueShadowDepthUVScaleBias.xy + ColoredCascadePass.OpaqueShadowDepthUVScaleBias.zw;
 	const float OpaqueDepth = ColoredCascadePass.OpaqueShadowDepthTexture.SampleLevel(ColoredCascadePass.OpaqueShadowDepthTextureSampler, OpaqueDepthUV, 0).r;
-	clip(OpaqueDepth - OpaqueOcclusionDepth + 1e-5f);
+	clip(OpaqueDepth - ShadowDepth + 1e-5f);
 
 	// Practically invisible surfaces neither tint nor register a depth.
 	clip(Opacity - 1e-5f);
