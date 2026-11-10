@@ -32,8 +32,7 @@ float3 SampleColoredShadow(float2 CascadeUV, float ReceiverZ)
 			const int3 LoadPos = int3(int2(Texel), 0);
 			const float3 Transmittance = CascadeColorTexture.Load(LoadPos).rgb;
 			const float FarthestCasterDepth = CascadeDepthTexture.Load(LoadPos).r;
-			const float NativeShadowVisibility = saturate((FarthestCasterDepth - ReceiverZ) * TransitionScale + 1.0f);
-			const float Behind = 1.0f - NativeShadowVisibility;
+			const float Behind = ReceiverZ > FarthestCasterDepth ? 1.0f : 0.0f;
 			const float3 Tinted = lerp(1.0f, Transmittance, Behind);
 			const float Weight = (X == 0 ? 1.0f - Frac.x : Frac.x) * (Y == 0 ? 1.0f - Frac.y : Frac.y);
 			Result += Tinted * Weight;
