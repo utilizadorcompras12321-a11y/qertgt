@@ -60,17 +60,19 @@ float3 SampleColoredShadow(int Cascade, float2 CellUV, float ReceiverZ)
 float3 EvaluateCascade(int Cascade, float4 ScreenPosition)
 {
 	float4 ShadowPosition = mul(ScreenPosition, ScreenToShadow[Cascade]);
-	const float ShadowZ = ShadowPosition.z;
-	ShadowPosition.xyz /= ShadowPosition.w;
-	return SampleColoredShadow(Cascade, ShadowPosition.xy, ShadowZ);
+	// ScreenToShadow is a projective transform. XY and Z must all be divided by W;
+	// using the un-divided Z makes the receiver/caster depth comparison invalid.
+	ShadowPosition.xyz /= max(abs(ShadowPosition.w), 1e-8f) * sign(ShadowPosition.w);
+	return SampleColoredShadow(Cascade, ShadowPosition.xy, ShadowPosition.z);
 }
 
 // Debug helper: raw atlas sample that the given cascade would use for this pixel.
 void DebugCascadeSample(int Cascade, float4 ScreenPosition, out float ReceiverZ, out float2 UV, out float FarthestCasterDepth)
 {
 	float4 ShadowPosition = mul(ScreenPosition, ScreenToShadow[Cascade]);
+	// Keep debug depth in the exact same normalized light space as EvaluateCascade.
+	ShadowPosition.xyz /= max(abs(ShadowPosition.w), 1e-8f) * sign(ShadowPosition.w);
 	ReceiverZ = ShadowPosition.z;
-	ShadowPosition.xyz /= ShadowPosition.w;
 	UV = ShadowPosition.xy;
 
 	const float4 Cell = CellRect[Cascade];
