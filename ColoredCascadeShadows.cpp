@@ -92,30 +92,31 @@ class FColoredCascadeTintPS : public FGlobalShader
 
 IMPLEMENT_GLOBAL_SHADER(FColoredCascadeTintPS, "/Engine/Private/ColoredCascadeShadows.usf", "TintMainPS", SF_Pixel);
 
-/** Same transform as FProjectedShadowInfo::GetScreenToShadowMatrix, but producing 0..1 UVs relative to ONE cascade cell (no atlas offset, no border). */
-static FMatrix GetScreenToColoredShadowMatrix(const FProjectedShadowInfo* Shadow, const FViewInfo& View)
+/**
+ * Uses the engine's exact screen-to-shadow transform, then removes the native atlas
+ * tile offset/scale because each colored cascade is stored in a standalone texture.
+ */
+static FMatrix GetScreenToColoredShadowMatrix(const FProjectedShadowInfo* Shadow, const FSceneView& View)
 {
-	const FMatrix ViewDependentTransform =
-		// Z of the position being transformed is the view space Z; turn it into post projection space.
-		FMatrix(
-			FPlane(1, 0, 0, 0),
-			FPlane(0, 1, 0, 0),
-			FPlane(0, 0, View.ViewMatrices.GetProjectionMatrix().M[2][2], 1),
-			FPlane(0, 0, View.ViewMatrices.GetProjectionMatrix().M[3][2], 0)) *
-		View.ViewMatrices.GetInvTranslatedViewProjectionMatrix() *
-		FTranslationMatrix(-View.ViewMatrices.GetPreViewTranslation());
+	const FIntPoint ShadowBufferResolution = Shadow->GetShadowBufferResolution();
+	check(ShadowBufferResolution.X > 0 && ShadowBufferResolution.Y > 0);
 
-	const FMatrix ShadowMapDependentTransform =
-		FTranslationMatrix(Shadow->PreShadowTranslation) *
-		Shadow->SubjectAndReceiverMatrix *
-		// xy: -1..1 -> 0..1 (y flipped like the regular shadow lookup), z normalized by the subject depth range.
-		FMatrix(
-			FPlane(0.5f, 0, 0, 0),
-			FPlane(0, -0.5f, 0, 0),
-			FPlane(0, 0, Shadow->InvMaxSubjectDepth, 0),
-			FPlane(0.5f, 0.5f, 0, 1));
+	const float InvBufferResolutionX = 1.0f / float(ShadowBufferResolution.X);
+	const float InvBufferResolutionY = 1.0f / float(ShadowBufferResolution.Y);
+	const float TileScaleX = float(Shadow->ResolutionX) * InvBufferResolutionX;
+	const float TileScaleY = float(Shadow->ResolutionY) * InvBufferResolutionY;
+	const float TileOffsetX = float(Shadow->X + Shadow->BorderSize) * InvBufferResolutionX;
+	const float TileOffsetY = float(Shadow->Y + Shadow->BorderSize) * InvBufferResolutionY;
 
-	return ViewDependentTransform * ShadowMapDependentTransform;
+	check(TileScaleX > 0.0f && TileScaleY > 0.0f);
+
+	const FMatrix AtlasToLocalCascade(
+		FPlane(1.0f / TileScaleX, 0, 0, 0),
+		FPlane(0, 1.0f / TileScaleY, 0, 0),
+		FPlane(0, 0, 1, 0),
+		FPlane(-TileOffsetX / TileScaleX, -TileOffsetY / TileScaleY, 0, 1));
+
+	return Shadow->GetScreenToShadowMatrix(View) * AtlasToLocalCascade;
 }
 
 BEGIN_SHADER_PARAMETER_STRUCT(FColoredCascadeCasterPassParameters, )
