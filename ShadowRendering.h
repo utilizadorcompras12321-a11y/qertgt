@@ -412,8 +412,8 @@ public:
 
 	/** Renders shadow maps for translucent primitives. */
 	void RenderTranslucencyDepths(FRHICommandList& RHICmdList, class FSceneRenderer* SceneRenderer);
-	/** Renders dynamic translucent casters into the RGB transmittance atlas cell for this CSM cascade. */
-	void RenderColoredTranslucencyDepths(FRHICommandList& RHICmdList, class FSceneRenderer* SceneRenderer, const FIntRect& CellRect, FRHITexture* OpaqueDepthTexture);
+	/** Renders translucent casters into the RGB transmittance cell for this CSM cascade. */
+	void RenderColoredTranslucencyDepths(FRHICommandList& RHICmdList, class FSceneRenderer* SceneRenderer, const FIntRect& CellRect);
 
 	static FRHIBlendState* GetBlendStateForProjection(
 		int32 ShadowMapChannel,
