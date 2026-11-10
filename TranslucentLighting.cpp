@@ -841,13 +841,36 @@ void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHIC
 	for (int32 MeshBatchIndex = 0; MeshBatchIndex < DynamicSubjectTranslucentMeshElements.Num(); MeshBatchIndex++)
 	{
 		const FMeshBatchAndRelevance& MeshAndRelevance = DynamicSubjectTranslucentMeshElements[MeshBatchIndex];
+
+		// Dynamic translucent elements can become invalid when their primitive is removed
+		// while the shadow pass is being assembled. Never dereference an incomplete batch.
+		if (!MeshAndRelevance.Mesh || !MeshAndRelevance.PrimitiveSceneProxy)
+		{
+			continue;
+		}
+
 		MeshProcessor.AddMeshBatch(*MeshAndRelevance.Mesh, ~0ull, MeshAndRelevance.PrimitiveSceneProxy);
 	}
 
 	for (int32 PrimitiveIndex = 0; PrimitiveIndex < SubjectTranslucentPrimitives.Num(); PrimitiveIndex++)
 	{
 		const FPrimitiveSceneInfo* PrimitiveSceneInfo = SubjectTranslucentPrimitives[PrimitiveIndex];
-		FPrimitiveViewRelevance ViewRelevance = ShadowDepthView->PrimitiveViewRelevanceMap[PrimitiveSceneInfo->GetIndex()];
+
+		if (!PrimitiveSceneInfo || !PrimitiveSceneInfo->Proxy)
+		{
+			continue;
+		}
+
+		const int32 PrimitiveId = PrimitiveSceneInfo->GetIndex();
+
+		// PrimitiveViewRelevanceMap is indexed by scene primitive ID. A stale or
+		// out-of-range ID must not be used to index the view's relevance array.
+		if (!ShadowDepthView->PrimitiveViewRelevanceMap.IsValidIndex(PrimitiveId))
+		{
+			continue;
+		}
+
+		FPrimitiveViewRelevance ViewRelevance = ShadowDepthView->PrimitiveViewRelevanceMap[PrimitiveId];
 
 		if (!ViewRelevance.bInitializedThisFrame)
 		{
