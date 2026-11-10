@@ -200,6 +200,12 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 	SortedShadows.Append(VisibleLightInfo.ShadowsToProject);
 	SortedShadows.Sort([](const FProjectedShadowInfo& A, const FProjectedShadowInfo& B)
 	{
+		// Far shadow cascades must follow all regular splits even if their split index
+		// uses a sentinel or a value outside the regular cascade sequence.
+		if (A.CascadeSettings.bFarShadowCascade != B.CascadeSettings.bFarShadowCascade)
+		{
+			return !A.CascadeSettings.bFarShadowCascade;
+		}
 		return A.CascadeSettings.ShadowSplitIndex < B.CascadeSettings.ShadowSplitIndex;
 	});
 
