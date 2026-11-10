@@ -47,7 +47,7 @@ void MainVS(
 
 	// Match ShadowDepthVertexShader.usf: linear normalized depth plus the native constant depth bias.
 	Output.ShadowDepth = max(
-		ShadowClipPos.z * ColoredCascadePass.ShadowParams.y + ColoredCascadePass.ShadowParams.x,
+		ShadowClipPos.z * ColoredCascadePass.ShadowParams.w + ColoredCascadePass.ShadowParams.x,
 		0.0f);
 	OutPosition = float4(ShadowClipPos.xy, 0.5f * ShadowClipPos.w, ShadowClipPos.w);
 
@@ -70,7 +70,10 @@ void MainPS(
 
 	// Match the native translucent shadow pass: apply material clipping and the per-material depth start offset.
 	GetMaterialClippingShadowDepth(MaterialParameters, PixelMaterialInputs);
-	const float ShadowDepth = Inputs.ShadowDepth + TranslucentShadowStartOffset;
+	// Reproduce the native CSM slope bias in normalized shadow-depth space.
+	const float DepthSlope = max(abs(ddx(Inputs.ShadowDepth)), abs(ddy(Inputs.ShadowDepth)));
+	const float SlopeBias = min(DepthSlope * ColoredCascadePass.ShadowParams.y, ColoredCascadePass.ShadowParams.z);
+	const float ShadowDepth = Inputs.ShadowDepth + SlopeBias + TranslucentShadowStartOffset;
 	const float Opacity = saturate(GetMaterialOpacity(PixelMaterialInputs) * GetMaterialTranslucentShadowDensityScale());
 
 	// Reject translucent casters hidden behind opaque geometry in the original CSM.
