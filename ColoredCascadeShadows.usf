@@ -9,10 +9,10 @@ Texture2D DepthAtlasTexture;  // R: farthest translucent depth (32 bit)
 int NumCascades;
 float Strength;
 int DebugMode;
-float4x4 ScreenToShadow[5];
-float4 CellRect[5];     // x, y, width, height in atlas pixels
-float4 SplitParams[5];  // SplitNear, SplitFar, FadePlaneOffset, InvFadePlaneLength
-float4 DepthParams[5];  // normalized depth bias, inverse normalized transition length
+float4x4 ScreenToShadow[8];
+float4 CellRect[8];     // x, y, width, height in atlas pixels
+float4 SplitParams[8];  // SplitNear, SplitFar, FadePlaneOffset, InvFadePlaneLength
+float4 DepthParams[8];  // normalized depth bias, inverse normalized transition length
 
 // Manually filtered lookup: every bilinear tap does its own depth test, so depth never bleeds across silhouettes.
 float3 SampleColoredShadow(int Cascade, float2 CellUV, float ReceiverZ)
