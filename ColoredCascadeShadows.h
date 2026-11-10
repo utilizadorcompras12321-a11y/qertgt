@@ -3,10 +3,9 @@
 // Overview
 //  RenderColoredCascadeShadowTint() is called from FDeferredShadingSceneRenderer::RenderLights() (render graph BUILD time) for every
 //  shadowed light, right before the light is applied. For lights with UDirectionalLightComponent::bCastColoredTranslucentCascadeShadows it adds:
-//   1. a raster pass that renders the translucent casters of all active directional CSM cascades into ONE small atlas
-//      (RGB = colored transmittance, auxiliary depth = farthest translucent caster). Its opaque CSM depth inputs are imported into RDG and declared as shader-resource reads.
-//   2. a full screen pass that reads the atlas and writes a screen space RGB tint (white = no tint) for opaque receivers.
-//  DeferredLightPixelShaders.usf then multiplies the light radiance by that tint (USE_COLORED_SHADOW_TINT permutation).
+//   1. one raster pass per existing directional CSM cascade, using a native-resolution RGB target and that cascade's original opaque depth target.
+//   2. one screen pass per cascade, accumulated far-to-near using the native fade-plane settings.
+//  DeferredLightPixelShaders.usf multiplies the light radiance by the resulting tint (USE_COLORED_SHADOW_TINT permutation).
 //
 // When the toggle is off nothing in here runs, no target is allocated and the light pass uses the original shader permutation.
 
@@ -23,9 +22,6 @@ class FSceneTextureUniformParameters;
 
 namespace ColoredCascadeShadows
 {
-	/** Hard limits (shader arrays are sized with these). */
-	constexpr int32 MaxCascades = 8; // Up to four regular and four far cascades, matching the component's exposed ranges.
-	constexpr int32 MaxCells = 32; // Eight cascades x four views; the RHI texture limit is checked separately.
 
 	/** Global kill switch (r.ColoredCascadeShadows.Enable). The per light toggle is still required. */
 	bool IsGloballyEnabled();
