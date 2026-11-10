@@ -40,8 +40,9 @@ void MainVS(
 	float4 ShadowClipPos = ClipPos;
 	if (ColoredCascadePass.bClampToNearPlane > 0.0f && ShadowClipPos.z < 0.0f)
 	{
-		ShadowClipPos.z = 0.000001f;
-		ShadowClipPos.w = 1.0f;
+		// Clamp only the clip-space depth. Replacing W changes the projected XY
+		// position (XY/W) and deforms the caster near the cascade near plane.
+		ShadowClipPos.z = 0.000001f * ShadowClipPos.w;
 	}
 
 	// Match ShadowDepthVertexShader.usf: linear normalized depth plus the native constant depth bias.
