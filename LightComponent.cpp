@@ -454,7 +454,7 @@ ULightComponent::ULightComponent(const FObjectInitializer& ObjectInitializer)
 
 	bAffectTranslucentLighting = true;
 	bTransmission = false;
-	bCastColoredTranslucentCascadeShadows = true;
+	bCastColoredTranslucentCascadeShadows = false;
 	LightFunctionScale = FVector(1024.0f, 1024.0f, 1024.0f);
 
 	LightFunctionFadeDistance = 100000.0f;
