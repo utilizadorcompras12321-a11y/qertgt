@@ -250,7 +250,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 		Entry.CellRect = FIntRect(0, 0, Shadow->ResolutionX, Shadow->ResolutionY);
 	}
 
-	const int32 NumCells = VisibleLightInfo.ColoredCascadeShadows.Num();
+	int32 NumCells = VisibleLightInfo.ColoredCascadeShadows.Num();
 	if (NumCells == 0)
 	{
 		return nullptr;
@@ -286,7 +286,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			UE_LOG(LogTemp, Warning, TEXT("[ColoredCSM] Atlas limit: keeping %d of %d cascades at native resolution (RHI max %d, cell max %ux%u)"),
 				MaxCellsThatFit, NumCells, MaxTextureDimension, MaxCellWidth, MaxCellHeight);
 		}
-		VisibleLightInfo.ColoredCascadeShadows.SetNum(MaxCellsThatFit, EAllowShrinking::No);
+		VisibleLightInfo.ColoredCascadeShadows.SetNum(MaxCellsThatFit, false);
 		NumCells = MaxCellsThatFit;
 	}
 	const int32 AtlasRows = FMath::DivideAndRoundUp(NumCells, AtlasColumns);
