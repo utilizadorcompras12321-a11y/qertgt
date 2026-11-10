@@ -73,7 +73,9 @@ void DebugCascadeSample(int Cascade, float4 ScreenPosition, out float ReceiverZ,
 {
 	float4 ShadowPosition = mul(ScreenPosition, ScreenToShadow[Cascade]);
 	// Keep debug depth in the exact same normalized light space as EvaluateCascade.
-	ShadowPosition.xyz /= max(abs(ShadowPosition.w), 1e-8f) * sign(ShadowPosition.w);
+	// Match the guarded projective divide used by EvaluateCascade.
+	const float SafeW = (ShadowPosition.w < 0.0f ? -1.0f : 1.0f) * max(abs(ShadowPosition.w), 1e-8f);
+	ShadowPosition.xyz /= SafeW;
 	ReceiverZ = ShadowPosition.z;
 	UV = ShadowPosition.xy;
 
