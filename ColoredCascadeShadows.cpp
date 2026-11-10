@@ -158,18 +158,10 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			NativeCascades.Add(Shadow);
 		}
 	}
-	NativeCascades.Sort([](const FProjectedShadowInfo& A, const FProjectedShadowInfo& B)
-	{
-		if (A.CascadeSettings.bFarShadowCascade != B.CascadeSettings.bFarShadowCascade)
-		{
-			return !A.CascadeSettings.bFarShadowCascade;
-		}
-		if (A.CascadeSettings.SplitFar != B.CascadeSettings.SplitFar)
-		{
-			return A.CascadeSettings.SplitFar < B.CascadeSettings.SplitFar;
-		}
-		return A.CascadeSettings.ShadowSplitIndex < B.CascadeSettings.ShadowSplitIndex;
-	});
+	// Use the exact comparator used by native shadow projection: descending split
+	// index, i.e. far-to-near. Do not reconstruct order from split distances; far
+	// cascades and overlapping fade planes are ordered by ShadowSplitIndex natively.
+	NativeCascades.Sort(FCompareFProjectedShadowInfoBySplitIndex());
 
 	for (FProjectedShadowInfo* Shadow : NativeCascades)
 	{
@@ -205,13 +197,13 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 	const float Strength = FMath::Clamp(CVarColoredCascadeShadowsStrength.GetValueOnRenderThread(), 0.0f, 1.0f);
 	const int32 DebugMode = CVarColoredCascadeShadowsDebug.GetValueOnRenderThread();
 
-	// The engine's shadow list is near-to-far. Accumulate in reverse so each pass can
-	// blend the current cascade against the already-rendered next-farther cascade.
+	// Native projection order is far-to-near. Preserve it so each cascade blends
+	// against the next farther cascade already accumulated in the tint texture.
 	for (int32 ViewIndex = 0; ViewIndex < NumViews; ++ViewIndex)
 	{
 		const FViewInfo& View = SceneRenderer.Views[ViewIndex];
 		RDG_GPU_MASK_SCOPE(GraphBuilder, View.GPUMask);
-		for (int32 EntryIndex = VisibleLightInfo.ColoredCascadeShadows.Num() - 1; EntryIndex >= 0; --EntryIndex)
+		for (int32 EntryIndex = 0; EntryIndex < VisibleLightInfo.ColoredCascadeShadows.Num(); ++EntryIndex)
 		{
 			const FColoredCascadeShadowEntry& Entry = VisibleLightInfo.ColoredCascadeShadows[EntryIndex];
 			if (Entry.CellIndex != ViewIndex || !Entry.Shadow) { continue; }
