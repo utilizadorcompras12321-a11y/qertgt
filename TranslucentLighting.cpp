@@ -859,7 +859,7 @@ void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHIC
 			for (int32 MeshIndex = 0; MeshIndex < PrimitiveSceneInfo->StaticMeshes.Num(); MeshIndex++)
 			{
 				const FStaticMeshBatch& StaticMeshBatch = PrimitiveSceneInfo->StaticMeshes[MeshIndex];
-				MeshProcessor.AddMeshBatch(StaticMeshBatch, ~0ull, StaticMeshBatch.PrimitiveSceneInfo->Proxy, StaticMeshBatch.Id);
+				MeshProcessor.AddMeshBatch(StaticMeshBatch, ~0ull, PrimitiveSceneInfo->Proxy, StaticMeshBatch.Id);
 			}
 		}
 	}
