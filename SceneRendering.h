@@ -160,12 +160,12 @@ public:
 	{}
 };
 
-/** One translucent RGB cascade cell associated with an existing projected CSM cascade. */
+/** One translucent RGB pass associated with an existing projected CSM cascade. */
 struct FColoredCascadeShadowEntry
 {
 	const FProjectedShadowInfo* Shadow = nullptr;
-	int32 CellIndex = INDEX_NONE;
-	FIntRect CellRect;
+	int32 CellIndex = INDEX_NONE; // View index owning this cascade.
+	FIntRect CellRect; // Local cascade rect: (0,0) -> (ResolutionX,ResolutionY).
 };
 
 /** Information about a visible light which isn't view-specific. */
