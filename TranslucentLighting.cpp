@@ -943,7 +943,7 @@ void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHIC
 
 	{
 		static uint32 ColoredDebugCounter = 0;
-		static TConsoleVariableData<int32>* DebugCVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.ColoredCascadeShadows.Debug"));
+		static TConsoleVariableData<int32>* DebugCVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.ColoredShadowMaps.Debug"));
 		if (DebugCVar && DebugCVar->GetValueOnRenderThread() > 0 && (ColoredDebugCounter++ % 120) < 4)
 		{
 			const FColoredCascadeMeshBatchStats& Stats = MeshProcessor.GetStats();
