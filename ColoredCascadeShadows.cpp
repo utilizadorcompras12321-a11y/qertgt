@@ -194,6 +194,8 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 	// shader arrays match UE4.27's native maximum; there is deliberately no separate
 	// ColoredCSM cascade-count setting.
 	// Sort explicitly near-to-far because ShadowsToProject is not guaranteed to retain split order.
+	// Five entries per view cover four regular cascades plus the optional far cascade.
+	int32 ViewCascadeCounts[4] = {};
 	TArray<FProjectedShadowInfo*, TInlineAllocator<8>> SortedShadows;
 	SortedShadows.Append(VisibleLightInfo.ShadowsToProject);
 	SortedShadows.Sort([](const FProjectedShadowInfo& A, const FProjectedShadowInfo& B)
@@ -226,12 +228,14 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			continue;
 		}
 
-		// UE4.27 has at most four regular directional CSM splits per view and this
-		// pass has four shader slots per view (eight atlas cells for two views).
-		// Treat exceeding that engine-defined capacity as an invariant violation,
-		// rather than silently dropping cascades.
+		// UE4 split-screen has up to four player views. Each view gets four regular splits
+		// and one optional far split. Reject unsupported view/cascade counts explicitly.
+		checkf(ViewIndex < UE_ARRAY_COUNT(ViewCascadeCounts),
+			TEXT("Colored CSM currently supports at most four views"));
+		checkf(++ViewCascadeCounts[ViewIndex] <= ColoredCascadeShadows::MaxCascades,
+			TEXT("Colored CSM exceeded five cascades for one view"));
 		checkf(VisibleLightInfo.ColoredCascadeShadows.Num() < ColoredCascadeShadows::MaxCells,
-			TEXT("Colored CSM exceeded its UE4.27 cascade/view capacity"));
+			TEXT("Colored CSM exceeded its 20-cell atlas capacity"));
 
 		FColoredCascadeShadowEntry& Entry = VisibleLightInfo.ColoredCascadeShadows.AddDefaulted_GetRef();
 		Entry.Shadow = Shadow;
@@ -247,7 +251,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 
 	RDG_EVENT_SCOPE(GraphBuilder, "ColoredCascadeShadows");
 
-	// Pack variable-sized cells in two columns. Each cell keeps the exact resolution allocated to its source CSM cascade.
+	// Pack variable-sized cells in up to four columns. Each cell keeps the exact resolution allocated to its source CSM cascade.
 	uint32 MaxCellWidth = 1;
 	uint32 MaxCellHeight = 1;
 	for (const FColoredCascadeShadowEntry& Entry : VisibleLightInfo.ColoredCascadeShadows)
