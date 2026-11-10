@@ -23,9 +23,9 @@ class FSceneTextureUniformParameters;
 namespace ColoredCascadeShadows
 {
 
-	/** Global kill switch (r.ColoredCascadeShadows.Enable). The per light toggle is still required. */
+	/** Global kill switch (r.ColoredShadowMaps). The per light toggle is still required. */
 	bool IsGloballyEnabled();
-	/** r.ColoredCascadeShadows.Debug (0 = off). */
+	/** r.ColoredShadowMaps.Debug (0 = off). */
 	int32 GetDebugLevel();
 	/** True roughly every 2 seconds when Debug > 0, to throttle logging. */
 	bool ShouldLogThisCall(int32 Site = 0);
