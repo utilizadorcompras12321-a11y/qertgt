@@ -82,11 +82,9 @@ void MainPS(
 	// and can reject panes close to the floor or other opaque receivers.
 	const float Opacity = saturate(GetMaterialOpacity(PixelMaterialInputs) * GetMaterialTranslucentShadowDensityScale());
 
-	const float2 LocalCascadeUV = (SvPosition.xy - ColoredCascadePass.CascadeRect.xy) / max(ColoredCascadePass.CascadeRect.zw, 1.0f.xx);
-	const float2 OpaqueDepthUV = LocalCascadeUV * ColoredCascadePass.OpaqueShadowDepthUVScaleBias.xy + ColoredCascadePass.OpaqueShadowDepthUVScaleBias.zw;
-	const float OpaqueDepth = ColoredCascadePass.OpaqueShadowDepthTexture.SampleLevel(ColoredCascadePass.OpaqueShadowDepthTextureSampler, OpaqueDepthUV, 0).r;
-	clip(OpaqueDepth - ShadowDepth + 1e-5f);
-
+	// Match the native directional-light translucency pass: do not perform a second
+	// manual comparison against the opaque CSM depth. Opaque shadowing is evaluated
+	// later by the regular deferred-light shadow path.
 	// Practically invisible surfaces neither tint nor register a depth.
 	clip(Opacity - 1e-5f);
 
