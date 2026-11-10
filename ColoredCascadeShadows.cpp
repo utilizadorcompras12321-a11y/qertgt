@@ -20,20 +20,20 @@
 #include "ScenePrivate.h"
 
 static TAutoConsoleVariable<int32> CVarColoredCascadeShadowsEnable(
-	TEXT("r.ColoredCascadeShadows.Enable"),
-	1,
-	TEXT("Global switch for colored translucent cascaded shadows. The per light toggle (Colored Translucent Cascade Shadows) is still required.\n")
-	TEXT(" 0: off, 1: on (default)"),
+	TEXT("r.ColoredShadowMaps"),
+	0,
+	TEXT("Global switch for colored translucent cascade shadows. The per-light Colored Shadow Maps option is still required.\n")
+	TEXT(" 0: off (default), 1: on."),
 	ECVF_RenderThreadSafe);
 
 static TAutoConsoleVariable<float> CVarColoredCascadeShadowsStrength(
-	TEXT("r.ColoredCascadeShadows.Strength"),
+	TEXT("r.ColoredShadowMaps.Strength"),
 	1.0f,
 	TEXT("Blend between no tint (0) and full colored translucent shadow (1)."),
 	ECVF_RenderThreadSafe);
 
 static TAutoConsoleVariable<int32> CVarColoredCascadeShadowsDebug(
-	TEXT("r.ColoredCascadeShadows.Debug"),
+	TEXT("r.ColoredShadowMaps.Debug"),
 	0,
 	TEXT("Diagnostics. 1: log the state of the feature every ~2 seconds (Output Log, search ColoredCSM).\n")
 	TEXT(" 2: light pass shows magenta wherever a colored cascade covers the pixel (tests the screen pass).\n")
