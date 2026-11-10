@@ -3,7 +3,7 @@
 // Overview
 //  RenderColoredCascadeShadowTint() is called from FDeferredShadingSceneRenderer::RenderLights() (render graph BUILD time) for every
 //  shadowed light, right before the light is applied. For lights with UDirectionalLightComponent::bCastColoredTranslucentCascadeShadows it adds:
-//   1. one raster pass per existing directional CSM cascade, using a native-resolution RGB target and that cascade's original opaque depth target.
+//   1. one raster pass per existing directional CSM cascade, using a native-resolution RGB target aligned to that cascade.
 //   2. one screen pass per cascade, accumulated far-to-near using the native fade-plane settings.
 //  DeferredLightPixelShaders.usf multiplies the light radiance by the resulting tint (USE_COLORED_SHADOW_TINT permutation).
 //
