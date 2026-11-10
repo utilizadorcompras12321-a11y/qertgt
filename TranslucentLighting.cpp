@@ -712,7 +712,6 @@ struct FColoredCascadeMeshBatchStats
 	int32 NumAttempted = 0;
 	int32 NumNotCastShadow = 0;
 	int32 NumMissingBatchData = 0;
-	int32 NumMissingParent = 0;
 	int32 NumZeroDepthRange = 0;
 	int32 NumWrongBlendMode = 0;
 	int32 NumWrongMaterialDomain = 0;
@@ -751,12 +750,8 @@ public:
 			return;
 		}
 
-		const FPrimitiveSceneInfo* ParentSceneInfo = ShadowInfo->GetParentSceneInfo();
-		if (!ParentSceneInfo || !ParentSceneInfo->Proxy)
-		{
-			++Stats.NumMissingParent;
-			return;
-		}
+		// Whole-scene directional cascades do not have a per-primitive parent on
+		// FProjectedShadowInfo. Use the mesh's own proxy for its transform instead.
 
 		const float SubjectDepthRange = ShadowInfo->MaxSubjectZ - ShadowInfo->MinSubjectZ;
 		if (FMath::IsNearlyZero(SubjectDepthRange))
@@ -809,7 +804,7 @@ public:
 
 		FColoredCascadeShadowShaderElementData ShaderElementData;
 		ShaderElementData.InitializeMeshMaterialData(ViewIfDynamicMeshCommand, PrimitiveSceneProxy, MeshBatch, StaticMeshId, false);
-		const float LocalToWorldScale = ParentSceneInfo->Proxy->GetLocalToWorld().GetScaleVector().GetMax();
+		const float LocalToWorldScale = PrimitiveSceneProxy->GetLocalToWorld().GetScaleVector().GetMax();
 		ShaderElementData.TranslucentShadowStartOffset = Material.GetTranslucentShadowStartOffset() * LocalToWorldScale / SubjectDepthRange;
 
 		const FMeshDrawCommandSortKey SortKey = CalculateMeshStaticSortKey(PassShaders.VertexShader, PassShaders.PixelShader);
@@ -954,8 +949,8 @@ void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHIC
 			const FColoredCascadeMeshBatchStats& Stats = MeshProcessor.GetStats();
 			UE_LOG(LogTemp, Warning, TEXT("[ColoredCSM]   cascade %d: dynamic entries=%d (skipped=%d), translucent primitives=%d (relevance skipped=%d), static batches submitted=%d, draw commands=%d"),
 				CascadeSettings.ShadowSplitIndex, DynamicSubjectTranslucentMeshElements.Num(), NumDynamicEntriesSkipped, SubjectTranslucentPrimitives.Num(), NumStaticPrimitivesSkippedRelevance, NumStaticBatchesSubmitted, VisibleMeshDrawCommands.Num());
-			UE_LOG(LogTemp, Warning, TEXT("[ColoredCSM]   mesh batches: attempted=%d accepted=%d no-CastShadow=%d missing-data=%d missing-parent=%d zero-depth-range=%d wrong-blend=%d wrong-domain=%d missing-shaders=%d"),
-				Stats.NumAttempted, Stats.NumAccepted, Stats.NumNotCastShadow, Stats.NumMissingBatchData, Stats.NumMissingParent, Stats.NumZeroDepthRange, Stats.NumWrongBlendMode, Stats.NumWrongMaterialDomain, Stats.NumMissingShaders);
+			UE_LOG(LogTemp, Warning, TEXT("[ColoredCSM]   mesh batches: attempted=%d accepted=%d no-CastShadow=%d missing-data=%d zero-depth-range=%d wrong-blend=%d wrong-domain=%d missing-shaders=%d"),
+				Stats.NumAttempted, Stats.NumAccepted, Stats.NumNotCastShadow, Stats.NumMissingBatchData, Stats.NumZeroDepthRange, Stats.NumWrongBlendMode, Stats.NumWrongMaterialDomain, Stats.NumMissingShaders);
 		}
 	}
 
