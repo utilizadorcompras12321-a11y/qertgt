@@ -45,10 +45,11 @@ void MainVS(
 		ShadowClipPos.z = 0.000001f * ShadowClipPos.w;
 	}
 
-	// Match ShadowDepthVertexShader.usf: linear normalized depth plus the native constant depth bias.
-	Output.ShadowDepth = max(
-		ShadowClipPos.z * ColoredCascadePass.ShadowParams.w + ColoredCascadePass.ShadowParams.x,
-		0.0f);
+	// Store unbiased linear normalized depth for the RGB receiver comparison.
+	// Native CSM depth bias is applied separately in MainPS only for testing against
+	// the original opaque shadow map; otherwise its large texel-scaled bias makes
+	// translucent shadows disappear when the caster is close to the receiver.
+	Output.ShadowDepth = max(ShadowClipPos.z * ColoredCascadePass.ShadowParams.w, 0.0f);
 	OutPosition = float4(ShadowClipPos.xy, 0.5f * ShadowClipPos.w, ShadowClipPos.w);
 
 	Output.FactoryInterpolants = VertexFactoryGetInterpolantsVSToPS(Input, VFIntermediates, VertexParameters);
@@ -70,19 +71,23 @@ void MainPS(
 
 	// Match the native translucent shadow pass: apply material clipping and the per-material depth start offset.
 	GetMaterialClippingShadowDepth(MaterialParameters, PixelMaterialInputs);
-	// Reproduce the native CSM slope bias in normalized shadow-depth space.
+	// Keep the RGB caster depth free of the large native CSM bias. That bias exists
+	// to prevent opaque surfaces from self-shadowing, but it pushes thin translucent
+	// casters behind nearby receivers and makes their shadows vanish near the ground.
+	const float ShadowDepth = Inputs.ShadowDepth + TranslucentShadowStartOffset;
+
+	// The original opaque CSM depth already contains native constant/slope bias.
+	// Reapply the same bias only for this occlusion test so translucent casters
+	// hidden behind opaque geometry are still rejected in the same depth convention.
 	const float DepthSlope = max(abs(ddx(Inputs.ShadowDepth)), abs(ddy(Inputs.ShadowDepth)));
 	const float SlopeBias = min(DepthSlope * ColoredCascadePass.ShadowParams.y, ColoredCascadePass.ShadowParams.z);
-	const float ShadowDepth = Inputs.ShadowDepth + SlopeBias + TranslucentShadowStartOffset;
+	const float OpaqueOcclusionDepth = ShadowDepth + ColoredCascadePass.ShadowParams.x + SlopeBias;
 	const float Opacity = saturate(GetMaterialOpacity(PixelMaterialInputs) * GetMaterialTranslucentShadowDensityScale());
 
-	// Reject translucent casters hidden behind opaque geometry in the original CSM.
-	// Both values use the same normalized subject-depth convention as the regular CSM shadow lookup.
-	// Larger values are farther from the light: reject this translucent fragment if opaque geometry is in front.
 	const float2 LocalCascadeUV = (SvPosition.xy - ColoredCascadePass.CascadeRect.xy) / max(ColoredCascadePass.CascadeRect.zw, 1.0f.xx);
 	const float2 OpaqueDepthUV = LocalCascadeUV * ColoredCascadePass.OpaqueShadowDepthUVScaleBias.xy + ColoredCascadePass.OpaqueShadowDepthUVScaleBias.zw;
 	const float OpaqueDepth = ColoredCascadePass.OpaqueShadowDepthTexture.SampleLevel(ColoredCascadePass.OpaqueShadowDepthTextureSampler, OpaqueDepthUV, 0).r;
-	clip(OpaqueDepth - ShadowDepth + 1e-5f);
+	clip(OpaqueDepth - OpaqueOcclusionDepth + 1e-5f);
 
 	// Practically invisible surfaces neither tint nor register a depth.
 	clip(Opacity - 1e-5f);
