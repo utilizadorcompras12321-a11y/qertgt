@@ -210,6 +210,11 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 
 	for (FProjectedShadowInfo* Shadow : SortedShadows)
 	{
+		if (Shadow == nullptr)
+		{
+			continue;
+		}
+
 		if (bLog)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[ColoredCSM]   shadow split=%d allocated=%d wholeSceneDir=%d rtdf=%d far=%d dependentView=%d depthView=%d"),
@@ -217,8 +222,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 				Shadow->CascadeSettings.bFarShadowCascade ? 1 : 0, Shadow->DependentView != nullptr ? 1 : 0, Shadow->ShadowDepthView != nullptr ? 1 : 0);
 		}
 
-		if (Shadow == nullptr
-			|| !Shadow->bAllocated
+		if (!Shadow->bAllocated
 			|| !Shadow->IsWholeSceneDirectionalShadow()
 			|| Shadow->bRayTracedDistanceField
 			|| Shadow->bReflectiveShadowmap
@@ -359,7 +363,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			case 17: CasterParameters->OpaqueDepthTexture17 = OpaqueDepthTexture; break;
 			case 18: CasterParameters->OpaqueDepthTexture18 = OpaqueDepthTexture; break;
 			case 19: CasterParameters->OpaqueDepthTexture19 = OpaqueDepthTexture; break;
-			default: checkNoEntry(); break;
+			default: break;
 			}
 		}
 
