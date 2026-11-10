@@ -79,7 +79,6 @@ class FColoredCascadeTintPS : public FGlobalShader
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, CascadeDepthTexture)
 		SHADER_PARAMETER(FMatrix, ScreenToShadow)
 		SHADER_PARAMETER(FVector4, SplitParams)
-		SHADER_PARAMETER(float, TransitionScale)
 		SHADER_PARAMETER(float, Strength)
 		SHADER_PARAMETER(int32, DebugMode)
 		RENDER_TARGET_BINDING_SLOTS()
@@ -249,8 +248,6 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			const FShadowCascadeSettings& Cascade = Shadow->CascadeSettings;
 			const float InvFadePlaneLength = Cascade.FadePlaneLength > 0.0f ? 1.0f / Cascade.FadePlaneLength : 0.0f;
 			TintParameters->SplitParams = FVector4(Cascade.SplitNear, Cascade.SplitFar, Cascade.FadePlaneOffset, InvFadePlaneLength);
-			// The native CSM transition is deliberately wide for opaque self-shadow acne; using it here erases transmission when a pane is close to its receiver.
-			TintParameters->TransitionScale = 100000.0f;
 			TintParameters->Strength = Strength * FMath::Clamp(Shadow->FadeAlphas[ViewIndex], 0.0f, 1.0f);
 			TintParameters->DebugMode = DebugMode;
 			TintParameters->RenderTargets[0] = FRenderTargetBinding(NextTintTexture, ERenderTargetLoadAction::ELoad);
