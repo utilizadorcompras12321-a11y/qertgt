@@ -19,7 +19,7 @@
 #include "SceneRendering.h"
 #include "ScenePrivate.h"
 
-static_assert(ColoredCascadeShadows::MaxCascades == 4, "Shader parameter arrays below are sized with the literal 4");
+static_assert(ColoredCascadeShadows::MaxCascades == 5, "Shader parameter arrays below are sized with the literal 5");
 
 static TAutoConsoleVariable<int32> CVarColoredCascadeShadowsEnable(
 	TEXT("r.ColoredCascadeShadows.Enable"),
@@ -95,13 +95,13 @@ class FColoredCascadeTintPS : public FGlobalShader
 		SHADER_PARAMETER(float, Strength)
 		SHADER_PARAMETER(int32, DebugMode)
 		// Screen space (W = view depth) -> shadow space (xy = 0..1 inside the cascade cell, z = normalized light depth).
-		SHADER_PARAMETER_ARRAY(FMatrix, ScreenToShadow, [4])
+		SHADER_PARAMETER_ARRAY(FMatrix, ScreenToShadow, [5])
 		// Cell rectangle of the cascade inside the atlas, in atlas pixels: x, y, width, height.
-		SHADER_PARAMETER_ARRAY(FVector4, CellRect, [4])
+		SHADER_PARAMETER_ARRAY(FVector4, CellRect, [5])
 		// SplitNear, SplitFar, FadePlaneOffset, InvFadePlaneLength (0 = no fade plane). All in view space distances.
-		SHADER_PARAMETER_ARRAY(FVector4, SplitParams, [4])
+		SHADER_PARAMETER_ARRAY(FVector4, SplitParams, [5])
 		// Normalized depth bias, inverse normalized transition length.
-		SHADER_PARAMETER_ARRAY(FVector4, DepthParams, [4])
+		SHADER_PARAMETER_ARRAY(FVector4, DepthParams, [5])
 		RENDER_TARGET_BINDING_SLOTS()
 	END_SHADER_PARAMETER_STRUCT()
 
@@ -149,6 +149,18 @@ BEGIN_SHADER_PARAMETER_STRUCT(FColoredCascadeCasterPassParameters, )
 	RDG_TEXTURE_ACCESS(OpaqueDepthTexture5, ERHIAccess::SRVGraphics)
 	RDG_TEXTURE_ACCESS(OpaqueDepthTexture6, ERHIAccess::SRVGraphics)
 	RDG_TEXTURE_ACCESS(OpaqueDepthTexture7, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture8, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture9, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture10, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture11, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture12, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture13, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture14, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture15, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture16, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture17, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture18, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture19, ERHIAccess::SRVGraphics)
 END_SHADER_PARAMETER_STRUCT()
 
 FRDGTextureRef RenderColoredCascadeShadowTint(
@@ -202,7 +214,6 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			|| !Shadow->IsWholeSceneDirectionalShadow()
 			|| Shadow->bRayTracedDistanceField
 			|| Shadow->bReflectiveShadowmap
-			|| Shadow->CascadeSettings.bFarShadowCascade
 			|| Shadow->DependentView == nullptr
 			|| Shadow->ShadowDepthView == nullptr)
 		{
@@ -244,7 +255,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 		MaxCellWidth = FMath::Max(MaxCellWidth, Entry.Shadow->ResolutionX);
 		MaxCellHeight = FMath::Max(MaxCellHeight, Entry.Shadow->ResolutionY);
 	}
-	const int32 AtlasColumns = FMath::Min(2, NumCells);
+	const int32 AtlasColumns = FMath::Min(ColoredCascadeShadows::AtlasColumns, NumCells);
 	const int32 AtlasRows = FMath::DivideAndRoundUp(NumCells, AtlasColumns);
 	for (FColoredCascadeShadowEntry& Entry : VisibleLightInfo.ColoredCascadeShadows)
 	{
@@ -297,6 +308,18 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			case 5: CasterParameters->OpaqueDepthTexture5 = OpaqueDepthTexture; break;
 			case 6: CasterParameters->OpaqueDepthTexture6 = OpaqueDepthTexture; break;
 			case 7: CasterParameters->OpaqueDepthTexture7 = OpaqueDepthTexture; break;
+			case 8: CasterParameters->OpaqueDepthTexture8 = OpaqueDepthTexture; break;
+			case 9: CasterParameters->OpaqueDepthTexture9 = OpaqueDepthTexture; break;
+			case 10: CasterParameters->OpaqueDepthTexture10 = OpaqueDepthTexture; break;
+			case 11: CasterParameters->OpaqueDepthTexture11 = OpaqueDepthTexture; break;
+			case 12: CasterParameters->OpaqueDepthTexture12 = OpaqueDepthTexture; break;
+			case 13: CasterParameters->OpaqueDepthTexture13 = OpaqueDepthTexture; break;
+			case 14: CasterParameters->OpaqueDepthTexture14 = OpaqueDepthTexture; break;
+			case 15: CasterParameters->OpaqueDepthTexture15 = OpaqueDepthTexture; break;
+			case 16: CasterParameters->OpaqueDepthTexture16 = OpaqueDepthTexture; break;
+			case 17: CasterParameters->OpaqueDepthTexture17 = OpaqueDepthTexture; break;
+			case 18: CasterParameters->OpaqueDepthTexture18 = OpaqueDepthTexture; break;
+			case 19: CasterParameters->OpaqueDepthTexture19 = OpaqueDepthTexture; break;
 			default: checkNoEntry(); break;
 			}
 		}
