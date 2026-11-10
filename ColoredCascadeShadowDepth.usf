@@ -85,7 +85,7 @@ void MainPS(
 	clip(OpaqueDepth - ShadowDepth + 1e-5f);
 
 	// Practically invisible surfaces neither tint nor register a depth.
-	clip(Opacity - 0.02f);
+	clip(Opacity - 1e-5f);
 
 	// Tint color: Base Color for lit translucent materials, Emissive Color for unlit ones (their Base Color pin does not exist).
 #if MATERIAL_SHADINGMODEL_UNLIT
