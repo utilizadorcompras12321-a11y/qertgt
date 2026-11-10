@@ -146,15 +146,33 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 	const int32 NumViews = SceneRenderer.Views.Num();
 
 	// Keep the exact projected cascades created by the Directional Light shadow setup.
-	// No independent cascade distribution, resolution, distance, or count is calculated here.
+	// Remove nulls before sorting because UE's pointer-array sort dereferences elements
+	// in its comparator. Sort near-to-far using the actual split distances from the engine.
+	TArray<FProjectedShadowInfo*, TInlineAllocator<16>> NativeCascades;
 	for (FProjectedShadowInfo* Shadow : VisibleLightInfo.ShadowsToProject)
 	{
-		if (!Shadow || !Shadow->bAllocated || !Shadow->IsWholeSceneDirectionalShadow()
-			|| Shadow->bRayTracedDistanceField || Shadow->bReflectiveShadowmap
-			|| !Shadow->DependentView || !Shadow->ShadowDepthView || !Shadow->RenderTargets.DepthTarget)
+		if (Shadow && Shadow->bAllocated && Shadow->IsWholeSceneDirectionalShadow()
+			&& !Shadow->bRayTracedDistanceField && !Shadow->bReflectiveShadowmap
+			&& Shadow->DependentView && Shadow->ShadowDepthView && Shadow->RenderTargets.DepthTarget)
 		{
-			continue;
+			NativeCascades.Add(Shadow);
 		}
+	}
+	NativeCascades.Sort([](const FProjectedShadowInfo& A, const FProjectedShadowInfo& B)
+	{
+		if (A.CascadeSettings.bFarShadowCascade != B.CascadeSettings.bFarShadowCascade)
+		{
+			return !A.CascadeSettings.bFarShadowCascade;
+		}
+		if (!FMath::IsNearlyEqual(A.CascadeSettings.SplitFar, B.CascadeSettings.SplitFar))
+		{
+			return A.CascadeSettings.SplitFar < B.CascadeSettings.SplitFar;
+		}
+		return A.CascadeSettings.ShadowSplitIndex < B.CascadeSettings.ShadowSplitIndex;
+	});
+
+	for (FProjectedShadowInfo* Shadow : NativeCascades)
+	{
 		const int32 ViewIndex = SceneRenderer.Views.IndexOfByPredicate(
 			[Shadow](const FViewInfo& View) { return &View == Shadow->DependentView; });
 		if (ViewIndex == INDEX_NONE || !Shadow->FadeAlphas.IsValidIndex(ViewIndex)
