@@ -45,10 +45,9 @@ void MainVS(
 		ShadowClipPos.z = 0.000001f * ShadowClipPos.w;
 	}
 
-	// Store unbiased linear normalized depth for the RGB receiver comparison.
-	// Native CSM depth bias is applied separately in MainPS only for testing against
-	// the original opaque shadow map; otherwise its large texel-scaled bias makes
-	// translucent shadows disappear when the caster is close to the receiver.
+	// Store linear normalized light-space depth for the RGB receiver comparison.
+	// The colored pass has no hardware depth attachment; this value is accumulated
+	// separately in the second render target and compared in the screen-space pass.
 	Output.ShadowDepth = max(ShadowClipPos.z * ColoredCascadePass.ShadowParams.w, 0.0f);
 	OutPosition = float4(ShadowClipPos.xy, 0.5f * ShadowClipPos.w, ShadowClipPos.w);
 
@@ -76,10 +75,7 @@ void MainPS(
 	// casters behind nearby receivers and makes their shadows vanish near the ground.
 	const float ShadowDepth = Inputs.ShadowDepth + TranslucentShadowStartOffset;
 
-	// Compare the unbiased translucent caster depth against the original opaque CSM depth.
-	// The opaque depth texture already contains the native rasterizer depth/slope bias.
-	// Applying the bias again to the caster moves it away from the light a second time
-	// and can reject panes close to the floor or other opaque receivers.
+	// As in the native translucency pass, there is no manual opaque-depth rejection here.
 	const float Opacity = saturate(GetMaterialOpacity(PixelMaterialInputs) * GetMaterialTranslucentShadowDensityScale());
 
 	// Match the native directional-light translucency pass: do not perform a second
