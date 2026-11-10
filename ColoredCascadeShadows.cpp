@@ -164,7 +164,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 		{
 			return !A.CascadeSettings.bFarShadowCascade;
 		}
-		if (!FMath::IsNearlyEqual(A.CascadeSettings.SplitFar, B.CascadeSettings.SplitFar))
+		if (A.CascadeSettings.SplitFar != B.CascadeSettings.SplitFar)
 		{
 			return A.CascadeSettings.SplitFar < B.CascadeSettings.SplitFar;
 		}
