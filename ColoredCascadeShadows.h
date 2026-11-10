@@ -24,9 +24,8 @@ class FSceneTextureUniformParameters;
 namespace ColoredCascadeShadows
 {
 	/** Hard limits (shader arrays are sized with these). */
-	constexpr int32 MaxCascades = 5; // Four regular splits plus one optional far cascade
-	constexpr int32 AtlasColumns = 4;
-	constexpr int32 MaxCells = 20; // 5 cascades x 4 split-screen views
+	constexpr int32 MaxCascades = 8; // Up to four regular and four far cascades, matching the component's exposed ranges.
+	constexpr int32 MaxCells = 32; // Eight cascades x four views; the RHI texture limit is checked separately.
 
 	/** Global kill switch (r.ColoredCascadeShadows.Enable). The per light toggle is still required. */
 	bool IsGloballyEnabled();
