@@ -707,6 +707,19 @@ private:
 IMPLEMENT_MATERIAL_SHADER_TYPE(, FColoredCascadeShadowVS, TEXT("/Engine/Private/ColoredCascadeShadowDepth.usf"), TEXT("MainVS"), SF_Vertex);
 IMPLEMENT_MATERIAL_SHADER_TYPE(, FColoredCascadeShadowPS, TEXT("/Engine/Private/ColoredCascadeShadowDepth.usf"), TEXT("MainPS"), SF_Pixel);
 
+struct FColoredCascadeMeshBatchStats
+{
+	int32 NumAttempted = 0;
+	int32 NumNotCastShadow = 0;
+	int32 NumMissingBatchData = 0;
+	int32 NumMissingParent = 0;
+	int32 NumZeroDepthRange = 0;
+	int32 NumWrongBlendMode = 0;
+	int32 NumWrongMaterialDomain = 0;
+	int32 NumMissingShaders = 0;
+	int32 NumAccepted = 0;
+};
+
 class FColoredCascadePassMeshProcessor : public FMeshPassProcessor
 {
 public:
@@ -722,22 +735,33 @@ public:
 
 	virtual void AddMeshBatch(const FMeshBatch& RESTRICT MeshBatch, uint64 BatchElementMask, const FPrimitiveSceneProxy* RESTRICT PrimitiveSceneProxy, int32 StaticMeshId = -1) override final
 	{
+		++Stats.NumAttempted;
+
+		if (!MeshBatch.CastShadow)
+		{
+			++Stats.NumNotCastShadow;
+			return;
+		}
+
 		// A stale or incomplete mesh batch must not be allowed to reach material or
 		// vertex-factory dereferences in this custom pass.
-		if (!MeshBatch.CastShadow || !PrimitiveSceneProxy || !MeshBatch.MaterialRenderProxy || !MeshBatch.VertexFactory || !ShadowInfo)
+		if (!PrimitiveSceneProxy || !MeshBatch.MaterialRenderProxy || !MeshBatch.VertexFactory || !ShadowInfo)
 		{
+			++Stats.NumMissingBatchData;
 			return;
 		}
 
 		const FPrimitiveSceneInfo* ParentSceneInfo = ShadowInfo->GetParentSceneInfo();
 		if (!ParentSceneInfo || !ParentSceneInfo->Proxy)
 		{
+			++Stats.NumMissingParent;
 			return;
 		}
 
 		const float SubjectDepthRange = ShadowInfo->MaxSubjectZ - ShadowInfo->MinSubjectZ;
 		if (FMath::IsNearlyZero(SubjectDepthRange))
 		{
+			++Stats.NumZeroDepthRange;
 			return;
 		}
 
@@ -749,8 +773,14 @@ public:
 		// AlphaComposite uses premultiplied RGB and may include additive color, so it cannot be
 		// converted reliably into colored light transmittance.
 		const EBlendMode BlendMode = Material.GetBlendMode();
-		if (BlendMode != BLEND_Translucent || !ShouldIncludeDomainInMeshPass(Material.GetMaterialDomain()))
+		if (BlendMode != BLEND_Translucent)
 		{
+			++Stats.NumWrongBlendMode;
+			return;
+		}
+		if (!ShouldIncludeDomainInMeshPass(Material.GetMaterialDomain()))
+		{
+			++Stats.NumWrongMaterialDomain;
 			return;
 		}
 
@@ -772,8 +802,10 @@ public:
 
 		if (!PassShaders.VertexShader.IsValid() || !PassShaders.PixelShader.IsValid())
 		{
+			++Stats.NumMissingShaders;
 			return;
 		}
+		++Stats.NumAccepted;
 
 		FColoredCascadeShadowShaderElementData ShaderElementData;
 		ShaderElementData.InitializeMeshMaterialData(ViewIfDynamicMeshCommand, PrimitiveSceneProxy, MeshBatch, StaticMeshId, false);
@@ -797,9 +829,12 @@ public:
 			ShaderElementData);
 	}
 
+	const FColoredCascadeMeshBatchStats& GetStats() const { return Stats; }
+
 private:
 	FMeshPassProcessorRenderState PassDrawRenderState;
 	const FProjectedShadowInfo* ShadowInfo;
+	FColoredCascadeMeshBatchStats Stats;
 };
 
 void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHICmdList, FSceneRenderer* SceneRenderer, const FIntRect& CellRect, FRHITexture* OpaqueDepthTexture)
@@ -852,6 +887,9 @@ void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHIC
 	FDynamicPassMeshDrawListContext DrawContext(DynamicMeshDrawCommandStorage, VisibleMeshDrawCommands, GraphicsMinimalPipelineStateSet, NeedsShaderInitialisation);
 
 	FColoredCascadePassMeshProcessor MeshProcessor(SceneRenderer->Scene, ShadowDepthView, DrawRenderState, this, &DrawContext);
+	int32 NumDynamicEntriesSkipped = 0;
+	int32 NumStaticPrimitivesSkippedRelevance = 0;
+	int32 NumStaticBatchesSubmitted = 0;
 
 	for (int32 MeshBatchIndex = 0; MeshBatchIndex < DynamicSubjectTranslucentMeshElements.Num(); MeshBatchIndex++)
 	{
@@ -861,6 +899,7 @@ void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHIC
 		// while the shadow pass is being assembled. Never dereference an incomplete batch.
 		if (!MeshAndRelevance.Mesh || !MeshAndRelevance.PrimitiveSceneProxy)
 		{
+			++NumDynamicEntriesSkipped;
 			continue;
 		}
 
@@ -897,8 +936,13 @@ void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHIC
 			for (int32 MeshIndex = 0; MeshIndex < PrimitiveSceneInfo->StaticMeshes.Num(); MeshIndex++)
 			{
 				const FStaticMeshBatch& StaticMeshBatch = PrimitiveSceneInfo->StaticMeshes[MeshIndex];
+				++NumStaticBatchesSubmitted;
 				MeshProcessor.AddMeshBatch(StaticMeshBatch, ~0ull, PrimitiveSceneInfo->Proxy, StaticMeshBatch.Id);
 			}
+		}
+		else
+		{
+			++NumStaticPrimitivesSkippedRelevance;
 		}
 	}
 
@@ -907,8 +951,11 @@ void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHIC
 		static TConsoleVariableData<int32>* DebugCVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.ColoredCascadeShadows.Debug"));
 		if (DebugCVar && DebugCVar->GetValueOnRenderThread() > 0 && (ColoredDebugCounter++ % 120) < 4)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[ColoredCSM]   cascade %d casters: dynamic translucent elements=%d, translucent primitives=%d, mesh draw commands=%d"),
-				CascadeSettings.ShadowSplitIndex, DynamicSubjectTranslucentMeshElements.Num(), SubjectTranslucentPrimitives.Num(), VisibleMeshDrawCommands.Num());
+			const FColoredCascadeMeshBatchStats& Stats = MeshProcessor.GetStats();
+			UE_LOG(LogTemp, Warning, TEXT("[ColoredCSM]   cascade %d: dynamic entries=%d (skipped=%d), translucent primitives=%d (relevance skipped=%d), static batches submitted=%d, draw commands=%d"),
+				CascadeSettings.ShadowSplitIndex, DynamicSubjectTranslucentMeshElements.Num(), NumDynamicEntriesSkipped, SubjectTranslucentPrimitives.Num(), NumStaticPrimitivesSkippedRelevance, NumStaticBatchesSubmitted, VisibleMeshDrawCommands.Num());
+			UE_LOG(LogTemp, Warning, TEXT("[ColoredCSM]   mesh batches: attempted=%d accepted=%d no-CastShadow=%d missing-data=%d missing-parent=%d zero-depth-range=%d wrong-blend=%d wrong-domain=%d missing-shaders=%d"),
+				Stats.NumAttempted, Stats.NumAccepted, Stats.NumNotCastShadow, Stats.NumMissingBatchData, Stats.NumMissingParent, Stats.NumZeroDepthRange, Stats.NumWrongBlendMode, Stats.NumWrongMaterialDomain, Stats.NumMissingShaders);
 		}
 	}
 
