@@ -640,7 +640,7 @@ BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT(FColoredCascadePassUniformParameters,)
 	SHADER_PARAMETER(FVector4, OpaqueShadowDepthUVScaleBias)
 	SHADER_PARAMETER(FVector4, AtlasCellRect)
 	SHADER_PARAMETER(FMatrix, ProjectionMatrix)
-	SHADER_PARAMETER(FVector2D, ShadowParams)
+	SHADER_PARAMETER(FVector4, ShadowParams)
 	SHADER_PARAMETER(float, bClampToNearPlane)
 END_GLOBAL_SHADER_PARAMETER_STRUCT()
 
@@ -846,7 +846,7 @@ void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHIC
 		FSceneRenderTargets& SceneRenderTargets = FSceneRenderTargets::Get(RHICmdList);
 		SetupSceneTextureUniformParameters(SceneRenderTargets, ShadowDepthView->FeatureLevel, ESceneTextureSetupMode::None, PassParameters.SceneTextures);
 		PassParameters.ProjectionMatrix = FTranslationMatrix(PreShadowTranslation - ShadowDepthView->ViewMatrices.GetPreViewTranslation()) * SubjectAndReceiverMatrix;
-		PassParameters.ShadowParams = FVector2D(GetShaderDepthBias(), InvMaxSubjectDepth);
+		PassParameters.ShadowParams = FVector4(GetShaderDepthBias(), GetShaderSlopeDepthBias(), GetShaderMaxSlopeDepthBias(), InvMaxSubjectDepth);
 		PassParameters.bClampToNearPlane = 1.0f;
 
 		// Sample the original opaque CSM depth atlas. X/Y include the atlas tile offset;
