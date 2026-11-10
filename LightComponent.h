@@ -124,7 +124,7 @@ class ENGINE_API ULightComponent : public ULightComponentBase
 	uint32 CastTranslucentShadows:1;
 
 	/** Whether a directional light casts dynamic RGB-transmittance shadows from translucent casters onto opaque receivers. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Light, AdvancedDisplay, meta=(DisplayName="Colored Translucent Cascade Shadows"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Light, AdvancedDisplay, meta=(DisplayName="Colored Shadow Maps"))
 	uint32 bCastColoredTranslucentCascadeShadows:1;
 
 	/** 
