@@ -722,7 +722,21 @@ public:
 
 	virtual void AddMeshBatch(const FMeshBatch& RESTRICT MeshBatch, uint64 BatchElementMask, const FPrimitiveSceneProxy* RESTRICT PrimitiveSceneProxy, int32 StaticMeshId = -1) override final
 	{
-		if (!MeshBatch.CastShadow)
+		// A stale or incomplete mesh batch must not be allowed to reach material or
+		// vertex-factory dereferences in this custom pass.
+		if (!MeshBatch.CastShadow || !PrimitiveSceneProxy || !MeshBatch.MaterialRenderProxy || !MeshBatch.VertexFactory || !ShadowInfo)
+		{
+			return;
+		}
+
+		const FPrimitiveSceneInfo* ParentSceneInfo = ShadowInfo->GetParentSceneInfo();
+		if (!ParentSceneInfo || !ParentSceneInfo->Proxy)
+		{
+			return;
+		}
+
+		const float SubjectDepthRange = ShadowInfo->MaxSubjectZ - ShadowInfo->MinSubjectZ;
+		if (FMath::IsNearlyZero(SubjectDepthRange))
 		{
 			return;
 		}
@@ -735,11 +749,7 @@ public:
 		// AlphaComposite uses premultiplied RGB and may include additive color, so it cannot be
 		// converted reliably into colored light transmittance.
 		const EBlendMode BlendMode = Material.GetBlendMode();
-		if (BlendMode != BLEND_Translucent)
-		{
-			return;
-		}
-		if (!ShouldIncludeDomainInMeshPass(Material.GetMaterialDomain()))
+		if (BlendMode != BLEND_Translucent || !ShouldIncludeDomainInMeshPass(Material.GetMaterialDomain()))
 		{
 			return;
 		}
@@ -760,10 +770,15 @@ public:
 		PassShaders.VertexShader = Material.GetShader<FColoredCascadeShadowVS>(VertexFactory->GetType());
 		PassShaders.PixelShader = Material.GetShader<FColoredCascadeShadowPS>(VertexFactory->GetType());
 
+		if (!PassShaders.VertexShader.IsValid() || !PassShaders.PixelShader.IsValid())
+		{
+			return;
+		}
+
 		FColoredCascadeShadowShaderElementData ShaderElementData;
 		ShaderElementData.InitializeMeshMaterialData(ViewIfDynamicMeshCommand, PrimitiveSceneProxy, MeshBatch, StaticMeshId, false);
-		const float LocalToWorldScale = ShadowInfo->GetParentSceneInfo()->Proxy->GetLocalToWorld().GetScaleVector().GetMax();
-		ShaderElementData.TranslucentShadowStartOffset = Material.GetTranslucentShadowStartOffset() * LocalToWorldScale / (ShadowInfo->MaxSubjectZ - ShadowInfo->MinSubjectZ);
+		const float LocalToWorldScale = ParentSceneInfo->Proxy->GetLocalToWorld().GetScaleVector().GetMax();
+		ShaderElementData.TranslucentShadowStartOffset = Material.GetTranslucentShadowStartOffset() * LocalToWorldScale / SubjectDepthRange;
 
 		const FMeshDrawCommandSortKey SortKey = CalculateMeshStaticSortKey(PassShaders.VertexShader, PassShaders.PixelShader);
 
