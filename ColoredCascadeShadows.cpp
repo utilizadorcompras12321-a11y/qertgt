@@ -245,7 +245,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			const float InvFadePlaneLength = Cascade.FadePlaneLength > 0.0f ? 1.0f / Cascade.FadePlaneLength : 0.0f;
 			TintParameters->SplitParams = FVector4(Cascade.SplitNear, Cascade.SplitFar, Cascade.FadePlaneOffset, InvFadePlaneLength);
 			TintParameters->DepthParams = FVector2D(0.0f, 1.0f / FMath::Max(Shadow->ComputeTransitionSize(), 1e-6f));
-			TintParameters->Strength = Strength;
+			TintParameters->Strength = Strength * FMath::Clamp(Shadow->FadeAlphas[ViewIndex], 0.0f, 1.0f);
 			TintParameters->DebugMode = DebugMode;
 			TintParameters->RenderTargets[0] = FRenderTargetBinding(NextTintTexture, ERenderTargetLoadAction::ELoad);
 			TShaderMapRef<FColoredCascadeTintPS> PixelShader(View.ShaderMap);
