@@ -189,13 +189,21 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 		UE_LOG(LogTemp, Warning, TEXT("[ColoredCSM] Light %d (%s): toggle on, ShadowsToProject=%d"), LightSceneInfo.Id, *LightProxy->GetComponentName().ToString(), VisibleLightInfo.ShadowsToProject.Num());
 	}
 
-	// Pick the cascades. ShadowsToProject is already known here (it is filled in InitViews); it is sorted by split index.
+	// Pick cascades in explicit near-to-far split order. Do not rely on ShadowsToProject
+	// retaining that order: its order can change as shadow subjects/views are assembled.
 	const int32 MaxCascadesPerView = ColoredCascadeShadows::GetMaxCascades();
+
+	TArray<FProjectedShadowInfo*, TInlineAllocator<8>> SortedShadows;
+	SortedShadows.Append(VisibleLightInfo.ShadowsToProject);
+	SortedShadows.Sort([](const FProjectedShadowInfo& A, const FProjectedShadowInfo& B)
+	{
+		return A.CascadeSettings.ShadowSplitIndex < B.CascadeSettings.ShadowSplitIndex;
+	});
 
 	TArray<int32, TInlineAllocator<2>> CascadesPerView;
 	CascadesPerView.SetNumZeroed(SceneRenderer.Views.Num());
 
-	for (FProjectedShadowInfo* Shadow : VisibleLightInfo.ShadowsToProject)
+	for (FProjectedShadowInfo* Shadow : SortedShadows)
 	{
 		if (bLog)
 		{
