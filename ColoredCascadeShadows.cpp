@@ -121,7 +121,6 @@ static FMatrix GetScreenToColoredShadowMatrix(const FProjectedShadowInfo* Shadow
 
 BEGIN_SHADER_PARAMETER_STRUCT(FColoredCascadeCasterPassParameters, )
 	RENDER_TARGET_BINDING_SLOTS()
-	RDG_TEXTURE_ACCESS(OpaqueDepthTexture, ERHIAccess::SRVGraphics)
 END_SHADER_PARAMETER_STRUCT()
 
 FRDGTextureRef RenderColoredCascadeShadowTint(
@@ -222,22 +221,17 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 				TexCreate_RenderTargetable | TexCreate_ShaderResource);
 			FRDGTextureRef CascadeColorTexture = GraphBuilder.CreateTexture(ColorDesc, TEXT("ColoredCascadeTransmittance"));
 			FRDGTextureRef CascadeDepthTexture = GraphBuilder.CreateTexture(DepthDesc, TEXT("ColoredCascadeTranslucentDepth"));
-			FRDGTextureRef OpaqueDepthTexture = GraphBuilder.RegisterExternalTexture(
-				Shadow->RenderTargets.DepthTarget, TEXT("ColoredCascadeOpaqueDepth"));
-			if (!OpaqueDepthTexture) { continue; }
-
-			FColoredCascadeCasterPassParameters* CasterParameters =
+						FColoredCascadeCasterPassParameters* CasterParameters =
 				GraphBuilder.AllocParameters<FColoredCascadeCasterPassParameters>();
 			CasterParameters->RenderTargets[0] = FRenderTargetBinding(CascadeColorTexture, ERenderTargetLoadAction::EClear);
 			CasterParameters->RenderTargets[1] = FRenderTargetBinding(CascadeDepthTexture, ERenderTargetLoadAction::EClear);
-			CasterParameters->OpaqueDepthTexture = OpaqueDepthTexture;
 			FSceneRenderer* Renderer = &SceneRenderer;
 			GraphBuilder.AddPass(
 				RDG_EVENT_NAME("ColoredCascadeCaster Split%d", Shadow->CascadeSettings.ShadowSplitIndex),
 				CasterParameters, ERDGPassFlags::Raster,
-				[Shadow, Renderer, CascadeRect, OpaqueDepthTexture](FRHICommandList& RHICmdList)
+				[Shadow, Renderer, CascadeRect](FRHICommandList& RHICmdList)
 				{
-					Shadow->RenderColoredTranslucencyDepths(RHICmdList, Renderer, CascadeRect, OpaqueDepthTexture->GetRHI());
+					Shadow->RenderColoredTranslucencyDepths(RHICmdList, Renderer, CascadeRect);
 				});
 
 			const int32 NextTintIndex = 1 - CurrentTintIndex;
