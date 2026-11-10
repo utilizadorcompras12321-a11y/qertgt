@@ -190,9 +190,9 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 		UE_LOG(LogTemp, Warning, TEXT("[ColoredCSM] Light %d (%s): toggle on, ShadowsToProject=%d"), LightSceneInfo.Id, *LightProxy->GetComponentName().ToString(), VisibleLightInfo.ShadowsToProject.Num());
 	}
 
-	// Reuse allocated directional CSM cascades. Shader arrays hold four regular splits
-	// plus one optional far split. The per-view counter is sized from the actual renderer
-	// views; auxiliary views must not index a fixed split-screen-sized array.
+	// Reuse the directional CSM cascades already allocated by the renderer. The shader
+	// parameter capacity mirrors the component's exposed maximum (four regular + four far
+	// cascades); per-view counters are sized from the actual renderer views.
 	TArray<int32, TInlineAllocator<8>> ViewCascadeCounts;
 	ViewCascadeCounts.Init(0, SceneRenderer.Views.Num());
 	TArray<FProjectedShadowInfo*, TInlineAllocator<8>> SortedShadows;
@@ -262,8 +262,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 
 	RDG_EVENT_SCOPE(GraphBuilder, "ColoredCascadeShadows");
 
-	// Pack variable-sized cells without rescaling them. The RHI limit is platform-specific;
-	// a fixed 4x5 grid can exceed it (for example, 16384x20480 with 4096px cascades).
+	// Pack variable-sized cells without rescaling them. The RHI texture limit is platform-specific.
 	uint32 MaxCellWidth = 1;
 	uint32 MaxCellHeight = 1;
 	for (const FColoredCascadeShadowEntry& Entry : VisibleLightInfo.ColoredCascadeShadows)
@@ -285,13 +284,16 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 	const int32 MaxCellsThatFit = FMath::Min(ColoredCascadeShadows::MaxCells, AtlasColumns * RowsThatFit);
 	if (NumCells > MaxCellsThatFit)
 	{
+		// Never silently drop the far cascades: a partial colored CSM set produces
+		// incorrect coverage and transition behavior. A multi-atlas path is required
+		// before supporting configurations that exceed one RHI-sized atlas.
 		if (bLog)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[ColoredCSM] Atlas limit: keeping %d of %d cascades at native resolution (RHI max %d, cell max %ux%u)"),
-				MaxCellsThatFit, NumCells, MaxTextureDimension, MaxCellWidth, MaxCellHeight);
+			UE_LOG(LogTemp, Warning, TEXT("[ColoredCSM] Atlas cannot fit all cascades at native resolution: %d required, %d fit (RHI max %d, cell max %ux%u). Skipping colored shadows for this light."),
+				NumCells, MaxCellsThatFit, MaxTextureDimension, MaxCellWidth, MaxCellHeight);
 		}
-		VisibleLightInfo.ColoredCascadeShadows.SetNum(MaxCellsThatFit, false);
-		NumCells = MaxCellsThatFit;
+		VisibleLightInfo.ColoredCascadeShadows.Reset();
+		return nullptr;
 	}
 	const int32 AtlasRows = FMath::DivideAndRoundUp(NumCells, AtlasColumns);
 	for (FColoredCascadeShadowEntry& Entry : VisibleLightInfo.ColoredCascadeShadows)
