@@ -267,7 +267,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 		MaxCellWidth = FMath::Max(MaxCellWidth, Entry.Shadow->ResolutionX);
 		MaxCellHeight = FMath::Max(MaxCellHeight, Entry.Shadow->ResolutionY);
 	}
-	const int32 MaxTextureDimension = FMath::Max(static_cast<int32>(GetMax2DTextureDimension()), 1);
+	const int32 MaxTextureDimension = FMath::Max(static_cast<int32>(GMaxTextureDimensions), 1);
 	const int32 ColumnsThatFit = MaxCellWidth <= static_cast<uint32>(MaxTextureDimension)
 		? MaxTextureDimension / static_cast<int32>(MaxCellWidth) : 0;
 	const int32 RowsThatFit = MaxCellHeight <= static_cast<uint32>(MaxTextureDimension)
