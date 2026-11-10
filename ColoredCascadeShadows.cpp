@@ -21,9 +21,9 @@
 
 static TAutoConsoleVariable<int32> CVarColoredCascadeShadowsEnable(
 	TEXT("r.ColoredShadowMaps"),
-	0,
+	1,
 	TEXT("Global switch for colored translucent cascade shadows. The per-light Colored Shadow Maps option is still required.\n")
-	TEXT(" 0: off (default), 1: on."),
+	TEXT(" 0: off, 1: on (default)."),
 	ECVF_RenderThreadSafe);
 
 static TAutoConsoleVariable<float> CVarColoredCascadeShadowsStrength(
@@ -255,7 +255,8 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			const FShadowCascadeSettings& Cascade = Shadow->CascadeSettings;
 			const float InvFadePlaneLength = Cascade.FadePlaneLength > 0.0f ? 1.0f / Cascade.FadePlaneLength : 0.0f;
 			TintParameters->SplitParams = FVector4(Cascade.SplitNear, Cascade.SplitFar, Cascade.FadePlaneOffset, InvFadePlaneLength);
-			TintParameters->TransitionScale = 1.0f / FMath::Max(Shadow->ComputeTransitionSize(), 1e-6f);
+			// The native CSM transition is deliberately wide for opaque self-shadow acne; using it here erases transmission when a pane is close to its receiver.
+			TintParameters->TransitionScale = 100000.0f;
 			TintParameters->Strength = Strength * FMath::Clamp(Shadow->FadeAlphas[ViewIndex], 0.0f, 1.0f);
 			TintParameters->DebugMode = DebugMode;
 			TintParameters->RenderTargets[0] = FRenderTargetBinding(NextTintTexture, ERenderTargetLoadAction::ELoad);
