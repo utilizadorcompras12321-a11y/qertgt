@@ -19,25 +19,13 @@
 #include "SceneRendering.h"
 #include "ScenePrivate.h"
 
-static_assert(ColoredCascadeShadows::MaxCascades == 5, "Shader parameter arrays below are sized with the literal 5");
+static_assert(ColoredCascadeShadows::MaxCascades == 8, "Shader parameter arrays below are sized with the literal 8");
 
 static TAutoConsoleVariable<int32> CVarColoredCascadeShadowsEnable(
 	TEXT("r.ColoredCascadeShadows.Enable"),
 	1,
 	TEXT("Global switch for colored translucent cascaded shadows. The per light toggle (Colored Translucent Cascade Shadows) is still required.\n")
 	TEXT(" 0: off, 1: on (default)"),
-	ECVF_RenderThreadSafe);
-
-static TAutoConsoleVariable<float> CVarColoredCascadeShadowsDepthBias(
-	TEXT("r.ColoredCascadeShadows.DepthBias"),
-	5.0f,
-	TEXT("World space depth bias (in Unreal units) used when deciding whether an opaque receiver is behind a translucent caster."),
-	ECVF_RenderThreadSafe);
-
-static TAutoConsoleVariable<float> CVarColoredCascadeShadowsTransition(
-	TEXT("r.ColoredCascadeShadows.Transition"),
-	30.0f,
-	TEXT("World space distance (in Unreal units) over which the tint fades in behind a translucent caster. Larger = softer."),
 	ECVF_RenderThreadSafe);
 
 static TAutoConsoleVariable<float> CVarColoredCascadeShadowsStrength(
@@ -95,13 +83,13 @@ class FColoredCascadeTintPS : public FGlobalShader
 		SHADER_PARAMETER(float, Strength)
 		SHADER_PARAMETER(int32, DebugMode)
 		// Screen space (W = view depth) -> shadow space (xy = 0..1 inside the cascade cell, z = normalized light depth).
-		SHADER_PARAMETER_ARRAY(FMatrix, ScreenToShadow, [5])
+		SHADER_PARAMETER_ARRAY(FMatrix, ScreenToShadow, [8])
 		// Cell rectangle of the cascade inside the atlas, in atlas pixels: x, y, width, height.
-		SHADER_PARAMETER_ARRAY(FVector4, CellRect, [5])
+		SHADER_PARAMETER_ARRAY(FVector4, CellRect, [8])
 		// SplitNear, SplitFar, FadePlaneOffset, InvFadePlaneLength (0 = no fade plane). All in view space distances.
-		SHADER_PARAMETER_ARRAY(FVector4, SplitParams, [5])
+		SHADER_PARAMETER_ARRAY(FVector4, SplitParams, [8])
 		// Normalized depth bias, inverse normalized transition length.
-		SHADER_PARAMETER_ARRAY(FVector4, DepthParams, [5])
+		SHADER_PARAMETER_ARRAY(FVector4, DepthParams, [8])
 		RENDER_TARGET_BINDING_SLOTS()
 	END_SHADER_PARAMETER_STRUCT()
 
@@ -161,6 +149,18 @@ BEGIN_SHADER_PARAMETER_STRUCT(FColoredCascadeCasterPassParameters, )
 	RDG_TEXTURE_ACCESS(OpaqueDepthTexture17, ERHIAccess::SRVGraphics)
 	RDG_TEXTURE_ACCESS(OpaqueDepthTexture18, ERHIAccess::SRVGraphics)
 	RDG_TEXTURE_ACCESS(OpaqueDepthTexture19, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture20, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture21, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture22, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture23, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture24, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture25, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture26, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture27, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture28, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture29, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture30, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(OpaqueDepthTexture31, ERHIAccess::SRVGraphics)
 END_SHADER_PARAMETER_STRUCT()
 
 FRDGTextureRef RenderColoredCascadeShadowTint(
@@ -276,7 +276,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 		? MaxTextureDimension / static_cast<int32>(MaxCellWidth) : 0;
 	const int32 RowsThatFit = MaxCellHeight <= static_cast<uint32>(MaxTextureDimension)
 		? MaxTextureDimension / static_cast<int32>(MaxCellHeight) : 0;
-	const int32 AtlasColumns = FMath::Min3(ColoredCascadeShadows::AtlasColumns, NumCells, ColumnsThatFit);
+	const int32 AtlasColumns = FMath::Min(NumCells, ColumnsThatFit);
 	if (AtlasColumns <= 0 || RowsThatFit <= 0)
 	{
 		VisibleLightInfo.ColoredCascadeShadows.Reset();
@@ -363,6 +363,18 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			case 17: CasterParameters->OpaqueDepthTexture17 = OpaqueDepthTexture; break;
 			case 18: CasterParameters->OpaqueDepthTexture18 = OpaqueDepthTexture; break;
 			case 19: CasterParameters->OpaqueDepthTexture19 = OpaqueDepthTexture; break;
+			case 20: CasterParameters->OpaqueDepthTexture20 = OpaqueDepthTexture; break;
+			case 21: CasterParameters->OpaqueDepthTexture21 = OpaqueDepthTexture; break;
+			case 22: CasterParameters->OpaqueDepthTexture22 = OpaqueDepthTexture; break;
+			case 23: CasterParameters->OpaqueDepthTexture23 = OpaqueDepthTexture; break;
+			case 24: CasterParameters->OpaqueDepthTexture24 = OpaqueDepthTexture; break;
+			case 25: CasterParameters->OpaqueDepthTexture25 = OpaqueDepthTexture; break;
+			case 26: CasterParameters->OpaqueDepthTexture26 = OpaqueDepthTexture; break;
+			case 27: CasterParameters->OpaqueDepthTexture27 = OpaqueDepthTexture; break;
+			case 28: CasterParameters->OpaqueDepthTexture28 = OpaqueDepthTexture; break;
+			case 29: CasterParameters->OpaqueDepthTexture29 = OpaqueDepthTexture; break;
+			case 30: CasterParameters->OpaqueDepthTexture30 = OpaqueDepthTexture; break;
+			case 31: CasterParameters->OpaqueDepthTexture31 = OpaqueDepthTexture; break;
 			default: break;
 			}
 		}
@@ -409,8 +421,6 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 	FRDGTextureRef TintTexture = GraphBuilder.CreateTexture(TintDesc, TEXT("ColoredCascadeShadowTint"));
 	AddClearRenderTargetPass(GraphBuilder, TintTexture, FLinearColor::White);
 
-	const float DepthBiasWorld = FMath::Max(CVarColoredCascadeShadowsDepthBias.GetValueOnRenderThread(), 0.0f);
-	const float TransitionWorld = FMath::Max(CVarColoredCascadeShadowsTransition.GetValueOnRenderThread(), 1.0f);
 	const float Strength = FMath::Clamp(CVarColoredCascadeShadowsStrength.GetValueOnRenderThread(), 0.0f, 1.0f);
 
 	for (int32 ViewIndex = 0; ViewIndex < SceneRenderer.Views.Num(); ++ViewIndex)
@@ -444,7 +454,9 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			PassParameters->ScreenToShadow[NumCascades] = GetScreenToColoredShadowMatrix(Shadow, View);
 			PassParameters->CellRect[NumCascades] = FVector4(Entry.CellRect.Min.X, Entry.CellRect.Min.Y, Entry.CellRect.Width(), Entry.CellRect.Height());
 			PassParameters->SplitParams[NumCascades] = FVector4(Cascade.SplitNear, Cascade.SplitFar, Cascade.FadePlaneOffset, InvFadePlaneLength);
-			PassParameters->DepthParams[NumCascades] = FVector4(DepthBiasWorld * InvDepthRange, 1.0f / FMath::Max(TransitionWorld * InvDepthRange, 1e-6f), 0.0f, 0.0f);
+			// Match the native CSM projection: the caster depth already includes the native constant/slope bias,
+			// and ComputeTransitionSize() supplies the same soft comparison width used by shadow projection.
+			PassParameters->DepthParams[NumCascades] = FVector4(0.0f, 1.0f / FMath::Max(Shadow->ComputeTransitionSize(), 1e-6f), 0.0f, 0.0f);
 
 			++NumCascades;
 		}
