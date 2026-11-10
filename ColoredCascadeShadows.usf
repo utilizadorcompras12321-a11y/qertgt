@@ -9,7 +9,6 @@ Texture2D CascadeColorTexture;
 Texture2D CascadeDepthTexture;
 float4x4 ScreenToShadow;
 float4 SplitParams; // SplitNear, SplitFar, FadePlaneOffset, InvFadePlaneLength
-float TransitionScale; // Same transition scale used by native ManualPCF
 float Strength;
 int DebugMode;
 
@@ -32,7 +31,9 @@ float3 SampleColoredShadow(float2 CascadeUV, float ReceiverZ)
 			const int3 LoadPos = int3(int2(Texel), 0);
 			const float3 Transmittance = CascadeColorTexture.Load(LoadPos).rgb;
 			const float FarthestCasterDepth = CascadeDepthTexture.Load(LoadPos).r;
-			const float Behind = ReceiverZ > FarthestCasterDepth ? 1.0f : 0.0f;
+			const float DepthDelta = ReceiverZ - FarthestCasterDepth;
+			const float DepthTransition = max(fwidth(DepthDelta), 1e-6f);
+			const float Behind = smoothstep(-DepthTransition, DepthTransition, DepthDelta);
 			const float3 Tinted = lerp(1.0f, Transmittance, Behind);
 			const float Weight = (X == 0 ? 1.0f - Frac.x : Frac.x) * (Y == 0 ? 1.0f - Frac.y : Frac.y);
 			Result += Tinted * Weight;
