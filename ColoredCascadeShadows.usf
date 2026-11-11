@@ -39,7 +39,9 @@ float3 SampleColoredShadow(float2 CascadeUV, float ReceiverZ)
 			const int3 LoadPosition = int3(int2(Texel), 0);
 			const float3 Transmittance = CascadeColorTexture.Load(LoadPosition).rgb;
 			const float CasterDepth = CascadeDepthTexture.Load(LoadPosition).r;
-			const float Behind = saturate((ReceiverZ - CasterDepth) * InvDepthTransition);
+			// UE4 uses reversed-Z for shadow depth: larger values are nearer to the light.
+			// A receiver is behind the translucent caster when caster depth is greater.
+			const float Behind = saturate((CasterDepth - ReceiverZ) * InvDepthTransition);
 			Samples[Y * 7 + X] = lerp(1.0f, Transmittance, Behind);
 		}
 	}
