@@ -1,7 +1,7 @@
 // Colored translucent cascaded shadow maps (custom addition for UE 4.27.2).
 // Caster pass: renders translucent meshes into a standalone native-resolution cascade target.
 //   SV_Target0 RGB = colored transmittance (blended multiplicatively, dst *= src)
-//   SV_Target1 R   = farthest translucent depth (32 bit float, blended with MAX) in the same normalized light space the receiver lookup uses
+//   SV_Target1 R   = nearest translucent depth (32 bit float, blended with MIN) in the same normalized light space the receiver lookup uses
 
 #define USE_STENCIL_LOD_DITHER 0
 
