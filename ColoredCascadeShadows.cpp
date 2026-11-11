@@ -44,9 +44,10 @@ static TAutoConsoleVariable<int32> CVarColoredCascadeShadowsDebug(
 	TEXT("Diagnostics. 1: log the state of the feature every ~2 seconds (Output Log, search ColoredCSM).\n")
 	TEXT(" 2: light pass shows magenta wherever a colored cascade covers the pixel (tests the screen pass).\n")
 	TEXT(" 3: light pass shows the raw tint, 1-tint amplified to red (tests the caster map/depth test).\n")
-	TEXT(" 4: cascade used per pixel (0 red, 1 green, 2 blue, 3 white; darker = lookup outside the cell).\n")
-	TEXT(" 5: red = caster in the atlas at this pixel, green = receiver behind it, blue = lookup outside the cell.\n")
-	TEXT(" 6: raw depths, red = receiver, green = caster."),
+	TEXT(" 4: cascade used per pixel (0 red, 1 green, 2 blue, 3+ white; darker = lookup outside the cell).\n")
+	TEXT(" 5: red = caster at this texel, green = receiver behind it, blue = lookup outside the cascade.\n")
+	TEXT(" 6: raw normalized depths, red = receiver, green = caster.\n")
+	TEXT(" 7: red = depth-transition factor, green = tint strength, blue = caster present."),
 	ECVF_RenderThreadSafe);
 
 namespace ColoredCascadeShadows
@@ -88,6 +89,7 @@ class FColoredCascadeTintPS : public FGlobalShader
 		SHADER_PARAMETER(FVector4, SplitParams)
 		SHADER_PARAMETER(float, Strength)
 		SHADER_PARAMETER(int32, DebugMode)
+		SHADER_PARAMETER(int32, CascadeIndex)
 		RENDER_TARGET_BINDING_SLOTS()
 	END_SHADER_PARAMETER_STRUCT()
 	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
@@ -260,6 +262,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			TintParameters->SplitParams = FVector4(Cascade.SplitNear, Cascade.SplitFar, Cascade.FadePlaneOffset, InvFadePlaneLength);
 			TintParameters->Strength = Strength * FMath::Clamp(Shadow->FadeAlphas[ViewIndex], 0.0f, 1.0f);
 			TintParameters->DebugMode = DebugMode;
+			TintParameters->CascadeIndex = Shadow->CascadeSettings.ShadowSplitIndex;
 			TintParameters->RenderTargets[0] = FRenderTargetBinding(NextTintTexture, ERenderTargetLoadAction::ELoad);
 			TShaderMapRef<FColoredCascadeTintPS> PixelShader(View.ShaderMap);
 			FPixelShaderUtils::AddFullscreenPass(

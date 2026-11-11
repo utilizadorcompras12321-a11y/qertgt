@@ -90,28 +90,81 @@ void TintMainPS(in float4 SVPos : SV_POSITION, out float4 OutColor : SV_Target0)
 		SceneW, 1.0f);
 
 	float3 Result = PreviousTint;
-	// Cascades are accumulated far-to-near. Do not clip the near side here:
-	// the next nearer cascade is drawn later and replaces this result before its
-	// fade plane, then blends over it through its native FadePlaneLength region.
-	// This avoids a hard near split edge in the colored pass while preserving the
-	// far limit of each cascade.
 	const bool bInCascade = SceneW >= SplitParams.x && SceneW < SplitParams.y;
+	float2 CascadeUV = 0.0f;
+	float ReceiverDepth = 0.0f;
+	float CasterDepth = 0.0f;
+	float3 CasterTransmittance = 1.0f;
+	bool bOutsideCascade = false;
+	bool bHasCaster = false;
+
 	if (bInCascade)
 	{
 		float4 ShadowPosition = mul(ScreenPosition, ScreenToShadow);
 
-		// Match the native ShadowProjectionPixelShader: receiver depth is the
-		// homogeneous light-space Z before the perspective divide. Only UV uses W.
-		const float ReceiverDepth = ShadowPosition.z;
+		// Receiver depth stays in homogeneous light-space Z, matching the native
+		// screen-to-shadow transform. Only XY is divided by W to form texture UVs.
+		ReceiverDepth = ShadowPosition.z;
 		const float SafeW = (ShadowPosition.w < 0.0f ? -1.0f : 1.0f) * max(abs(ShadowPosition.w), 1e-8f);
-		ShadowPosition.xy /= SafeW;
-		const float3 CascadeTint = SampleColoredShadow(ShadowPosition.xy, ReceiverDepth);
+		CascadeUV = ShadowPosition.xy / SafeW;
+		bOutsideCascade = any(CascadeUV < 0.0f) || any(CascadeUV > 1.0f);
+
+		if (!bOutsideCascade)
+		{
+			uint Width, Height;
+			CascadeDepthTexture.GetDimensions(Width, Height);
+			const int2 LastPixel = int2(Width - 1, Height - 1);
+			const int2 CasterPixel = clamp(int2(CascadeUV * float2(Width, Height)), int2(0, 0), LastPixel);
+			const int3 LoadPosition = int3(CasterPixel, 0);
+			CasterDepth = CascadeDepthTexture.Load(LoadPosition).r;
+			CasterTransmittance = CascadeColorTexture.Load(LoadPosition).rgb;
+			// The depth target clears to 0 and accumulates the farthest translucent
+			// layer with MAX, so a positive value identifies a populated texel.
+			bHasCaster = CasterDepth > 1e-8f;
+		}
+
+		const float3 CascadeTint = SampleColoredShadow(CascadeUV, ReceiverDepth);
 		const float Blend = SplitParams.w > 0.0f
 			? 1.0f - saturate((SceneW - SplitParams.z) * SplitParams.w)
 			: 1.0f;
 		Result = lerp(PreviousTint, lerp(1.0f, CascadeTint, Strength), Blend);
 	}
+
 	OutColor = float4(Result, 1.0f);
-	if (DebugMode == 2) OutColor = float4(bInCascade ? float3(1, 0, 1) : PreviousTint, 1.0f);
-	else if (DebugMode == 3) OutColor = float4(1.0f - Result, 1.0f);
+	if (DebugMode == 2)
+	{
+		OutColor = float4(bInCascade ? float3(1, 0, 1) : PreviousTint, 1.0f);
+	}
+	else if (DebugMode == 3)
+	{
+		OutColor = float4(1.0f - Result, 1.0f);
+	}
+	else if (DebugMode == 4 && bInCascade)
+	{
+		float3 CascadeDebugColor = float3(1.0f, 1.0f, 1.0f);
+		if (CascadeIndex == 0) CascadeDebugColor = float3(1.0f, 0.0f, 0.0f);
+		else if (CascadeIndex == 1) CascadeDebugColor = float3(0.0f, 1.0f, 0.0f);
+		else if (CascadeIndex == 2) CascadeDebugColor = float3(0.0f, 0.0f, 1.0f);
+		OutColor = float4(CascadeDebugColor * (bOutsideCascade ? 0.25f : 1.0f), 1.0f);
+	}
+	else if (DebugMode == 5 && bInCascade)
+	{
+		OutColor = float4(
+			bHasCaster ? 1.0f : 0.0f,
+			(bHasCaster && ReceiverDepth > CasterDepth) ? 1.0f : 0.0f,
+			bOutsideCascade ? 1.0f : 0.0f,
+			1.0f);
+	}
+	else if (DebugMode == 6 && bInCascade)
+	{
+		OutColor = float4(saturate(ReceiverDepth), bHasCaster ? saturate(CasterDepth) : 0.0f, 0.0f, 1.0f);
+	}
+	else if (DebugMode == 7 && bInCascade)
+	{
+		const float Behind = bHasCaster ? saturate((ReceiverDepth - CasterDepth) * InvDepthTransition) : 0.0f;
+		const float TintAmount = bHasCaster
+			? saturate(4.0f * (1.0f - dot(CasterTransmittance, float3(1.0f / 3.0f, 1.0f / 3.0f, 1.0f / 3.0f))))
+			: 0.0f;
+		OutColor = float4(Behind, TintAmount, bHasCaster ? 1.0f : 0.0f, 1.0f);
+	}
 }

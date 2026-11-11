@@ -663,8 +663,6 @@ class FColoredCascadeShadowShaderElementData : public FMeshMaterialShaderElement
 {
 public:
 	float TranslucentShadowStartOffset = 0.0f;
-	FTextureRHIRef NativeOpaqueShadowDepthTexture;
-	FVector4 NativeOpaqueShadowDepthAtlasOrigin = FVector4(0.0f, 0.0f, 0.0f, 0.0f);
 };
 
 class FColoredCascadeShadowPS : public FMeshMaterialShader
@@ -682,9 +680,6 @@ public:
 	{
 		PassUniformBuffer.Bind(Initializer.ParameterMap, FColoredCascadePassUniformParameters::StaticStructMetadata.GetShaderVariableName());
 		TranslucentShadowStartOffset.Bind(Initializer.ParameterMap, TEXT("TranslucentShadowStartOffset"));
-		NativeOpaqueShadowDepthTexture.Bind(Initializer.ParameterMap, TEXT("NativeOpaqueShadowDepthTexture"));
-		NativeOpaqueShadowDepthTextureSampler.Bind(Initializer.ParameterMap, TEXT("NativeOpaqueShadowDepthTextureSampler"));
-		NativeOpaqueShadowDepthAtlasOrigin.Bind(Initializer.ParameterMap, TEXT("NativeOpaqueShadowDepthAtlasOrigin"));
 	}
 
 	void GetShaderBindings(
@@ -699,19 +694,10 @@ public:
 	{
 		FMeshMaterialShader::GetShaderBindings(Scene, FeatureLevel, PrimitiveSceneProxy, MaterialRenderProxy, Material, DrawRenderState, ShaderElementData, ShaderBindings);
 		ShaderBindings.Add(TranslucentShadowStartOffset, ShaderElementData.TranslucentShadowStartOffset);
-		ShaderBindings.AddTexture(
-			NativeOpaqueShadowDepthTexture,
-			NativeOpaqueShadowDepthTextureSampler,
-			TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI(),
-			ShaderElementData.NativeOpaqueShadowDepthTexture.GetReference());
-		ShaderBindings.Add(NativeOpaqueShadowDepthAtlasOrigin, ShaderElementData.NativeOpaqueShadowDepthAtlasOrigin);
 	}
 
 private:
 	LAYOUT_FIELD(FShaderParameter, TranslucentShadowStartOffset);
-	LAYOUT_FIELD(FShaderResourceParameter, NativeOpaqueShadowDepthTexture);
-	LAYOUT_FIELD(FShaderResourceParameter, NativeOpaqueShadowDepthTextureSampler);
-	LAYOUT_FIELD(FShaderParameter, NativeOpaqueShadowDepthAtlasOrigin);
 };
 
 IMPLEMENT_MATERIAL_SHADER_TYPE(, FColoredCascadeShadowVS, TEXT("/Engine/Private/ColoredCascadeShadowDepth.usf"), TEXT("MainVS"), SF_Vertex);
@@ -817,15 +803,6 @@ public:
 		const float LocalToWorldScale = PrimitiveSceneProxy->GetLocalToWorld().GetScaleVector().GetMax();
 		ShaderElementData.TranslucentShadowStartOffset = Material.GetTranslucentShadowStartOffset() * LocalToWorldScale / SubjectDepthRange;
 
-		// Sample the exact opaque depth atlas used by native CSM. The custom RGB
-		// target is cascade-local, so map its pixel coordinates back into this atlas tile.
-		ShaderElementData.NativeOpaqueShadowDepthTexture =
-			ShadowInfo->RenderTargets.DepthTarget->GetRenderTargetItem().ShaderResourceTexture;
-		ShaderElementData.NativeOpaqueShadowDepthAtlasOrigin = FVector4(
-			float(ShadowInfo->X + ShadowInfo->BorderSize),
-			float(ShadowInfo->Y + ShadowInfo->BorderSize),
-			0.0f,
-			0.0f);
 
 		const FMeshDrawCommandSortKey SortKey = CalculateMeshStaticSortKey(PassShaders.VertexShader, PassShaders.PixelShader);
 

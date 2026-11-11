@@ -13,14 +13,10 @@
 #include "/Engine/Generated/Material.ush"
 #include "/Engine/Generated/VertexFactory.ush"
 
-// Native opaque CSM depth atlas. Conventional depth: clear=1, nearer values are smaller.
-Texture2D<float> NativeOpaqueShadowDepthTexture;
-float4 NativeOpaqueShadowDepthAtlasOrigin;
-
 struct FColoredShadowVSToPS
 {
 	FVertexFactoryInterpolantsVSToPS FactoryInterpolants;
-	noperspective float ShadowDepth : TEXCOORD6;
+	float ShadowDepth : TEXCOORD6;
 };
 
 void MainVS(
@@ -37,23 +33,20 @@ void MainVS(
 	FMaterialVertexParameters VertexParameters = GetMaterialVertexParameters(Input, VFIntermediates, WorldPos.xyz, TangentToLocal);
 	WorldPos.xyz += GetMaterialWorldPositionOffset(VertexParameters);
 
-	const float4 ClipPos = mul(float4(WorldPos.xyz, 1), ColoredCascadePass.ProjectionMatrix);
+	float4 ShadowClipPos = mul(float4(WorldPos.xyz, 1), ColoredCascadePass.ProjectionMatrix);
 
-	// The depth is passed as an interpolant instead of through SV_POSITION: no depth buffer is bound, and this way casters in front of
-	// the cascade near plane are clamped (bClampToNearPlane) instead of being clipped.
-	float4 ShadowClipPos = ClipPos;
+	// Match the native translucent-shadow vertex shader. Directional cascades use
+	// standard (linear normalized) depth, which is also the depth interpolated in
+	// SV_POSITION for material calculations in the pixel shader.
 	if (ColoredCascadePass.bClampToNearPlane > 0.0f && ShadowClipPos.z < 0.0f)
 	{
-		// Clamp only the clip-space depth. Replacing W changes the projected XY
-		// position (XY/W) and deforms the caster near the cascade near plane.
-		ShadowClipPos.z = 0.000001f * ShadowClipPos.w;
+		ShadowClipPos.z = 0.000001f;
+		ShadowClipPos.w = 1.0f;
 	}
 
-	// Store linear normalized light-space depth for the RGB receiver comparison.
-	// The colored pass has no hardware depth attachment; this value is accumulated
-	// separately in the second render target and compared in the screen-space pass.
-	Output.ShadowDepth = max(ShadowClipPos.z * ColoredCascadePass.ShadowParams.w, 0.0f);
-	OutPosition = float4(ShadowClipPos.xy, 0.5f * ShadowClipPos.w, ShadowClipPos.w);
+	Output.ShadowDepth = ShadowClipPos.z * ColoredCascadePass.ShadowParams.w;
+	OutPosition = ShadowClipPos;
+	OutPosition.z = Output.ShadowDepth * OutPosition.w;
 
 	Output.FactoryInterpolants = VertexFactoryGetInterpolantsVSToPS(Input, VFIntermediates, VertexParameters);
 }
@@ -79,18 +72,10 @@ void MainPS(
 	// casters behind nearby receivers and makes their shadows vanish near the ground.
 	const float ShadowDepth = Inputs.ShadowDepth + TranslucentShadowStartOffset;
 
-	// Reject translucent fragments hidden behind the closest opaque caster in the
-	// native CSM atlas. This pass uses a cascade-local viewport, so restore the
-	// native atlas tile origin before loading its depth.
-	uint OpaqueDepthWidth, OpaqueDepthHeight;
-	NativeOpaqueShadowDepthTexture.GetDimensions(OpaqueDepthWidth, OpaqueDepthHeight);
-	const int2 CascadePixel = int2(SvPosition.xy);
-	const int2 AtlasOrigin = int2(NativeOpaqueShadowDepthAtlasOrigin.xy);
-	const int2 AtlasPixel = clamp(CascadePixel + AtlasOrigin, int2(0, 0), int2(OpaqueDepthWidth - 1, OpaqueDepthHeight - 1));
-	const float OpaqueDepth = NativeOpaqueShadowDepthTexture.Load(int3(AtlasPixel, 0)).r;
-	// Native shadow depth is cleared to 1 and uses LESS/equal. A larger
-	// translucent depth is behind opaque geometry and must not tint the light.
-	clip(OpaqueDepth + 1.0e-5f - ShadowDepth);
+	// Do not repeat the opaque CSM depth test here. Deferred lighting already
+	// applies native opaque shadow attenuation before multiplying this RGB tint.
+	// Comparing unbiased translucent depth against the biased opaque atlas can
+	// reject valid casters near contact, leaving only a thin transmission line.
 
 	const float Opacity = saturate(GetMaterialOpacity(PixelMaterialInputs) * GetMaterialTranslucentShadowDensityScale());
 	// Practically invisible surfaces neither tint nor register a depth.
