@@ -16,7 +16,14 @@ int CascadeIndex;
 
 float3 SampleColoredShadow(float2 CascadeUV, float ReceiverZ)
 {
-	if (any(CascadeUV < 0.0f) || any(CascadeUV > 1.0f)) return 1.0f;
+	// The receiver depth is already normalized by the native screen-to-shadow matrix.
+	// Reject pixels outside the valid directional shadow depth interval instead of
+	// allowing invalid receiver positions to sample a clamped edge texel.
+	if (any(CascadeUV < 0.0f) || any(CascadeUV > 1.0f) ||
+		ReceiverZ < 0.0f || ReceiverZ >= 0.99999f)
+	{
+		return 1.0f;
+	}
 
 	uint Width, Height;
 	CascadeColorTexture.GetDimensions(Width, Height);
@@ -40,7 +47,10 @@ float3 SampleColoredShadow(float2 CascadeUV, float ReceiverZ)
 			const int3 LoadPosition = int3(int2(Texel), 0);
 			const float3 Transmittance = CascadeColorTexture.Load(LoadPosition).rgb;
 			const float CasterDepth = CascadeDepthTexture.Load(LoadPosition).r;
-			const float Behind = saturate((ReceiverZ - CasterDepth) * InvDepthTransition);
+			const float DepthFactor = saturate((ReceiverZ - CasterDepth) * InvDepthTransition);
+			// Smooth the existing cascade-scaled depth transition without using fwidth,
+			// which can expand the transition across sloped receiver surfaces.
+			const float Behind = smoothstep(0.0f, 1.0f, DepthFactor);
 			Samples[Y * 7 + X] = lerp(1.0f, Transmittance, Behind);
 		}
 	}
@@ -106,9 +116,15 @@ void TintMainPS(in float4 SVPos : SV_POSITION, out float4 OutColor : SV_Target0)
 		// Receiver depth stays in homogeneous light-space Z, matching the native
 		// screen-to-shadow transform. Only XY is divided by W to form texture UVs.
 		ReceiverDepth = ShadowPosition.z;
-		const float SafeW = (ShadowPosition.w < 0.0f ? -1.0f : 1.0f) * max(abs(ShadowPosition.w), 1e-8f);
+		// Directional CSMs are orthographic, so the native transform provides
+		// normalized light-space Z directly (the engine does not divide Z by W).
+		// W is still validated before using XY to form cascade UVs.
+		const bool bValidShadowW = ShadowPosition.w > 1e-8f;
+		const float SafeW = max(ShadowPosition.w, 1e-8f);
 		CascadeUV = ShadowPosition.xy / SafeW;
-		bOutsideCascade = any(CascadeUV < 0.0f) || any(CascadeUV > 1.0f);
+		bOutsideCascade = !bValidShadowW ||
+			any(CascadeUV < 0.0f) || any(CascadeUV > 1.0f) ||
+			ReceiverDepth < 0.0f || ReceiverDepth >= 0.99999f;
 
 		if (!bOutsideCascade)
 		{
@@ -162,7 +178,10 @@ void TintMainPS(in float4 SVPos : SV_POSITION, out float4 OutColor : SV_Target0)
 	}
 	else if (DebugMode == 7 && bInCascade)
 	{
-		const float Behind = bHasCaster ? saturate((ReceiverDepth - CasterDepth) * InvDepthTransition) : 0.0f;
+		const float DepthFactor = bHasCaster
+			? saturate((ReceiverDepth - CasterDepth) * InvDepthTransition)
+			: 0.0f;
+		const float Behind = smoothstep(0.0f, 1.0f, DepthFactor);
 		const float TintAmount = bHasCaster
 			? saturate(4.0f * (1.0f - dot(CasterTransmittance, float3(1.0f / 3.0f, 1.0f / 3.0f, 1.0f / 3.0f))))
 			: 0.0f;
