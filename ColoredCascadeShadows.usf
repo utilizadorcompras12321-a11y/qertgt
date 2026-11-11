@@ -119,9 +119,9 @@ void TintMainPS(in float4 SVPos : SV_POSITION, out float4 OutColor : SV_Target0)
 			const int3 LoadPosition = int3(CasterPixel, 0);
 			CasterDepth = CascadeDepthTexture.Load(LoadPosition).r;
 			CasterTransmittance = CascadeColorTexture.Load(LoadPosition).rgb;
-			// The depth target clears to 0 and accumulates the farthest translucent
-			// layer with MAX, so a positive value identifies a populated texel.
-			bHasCaster = CasterDepth > 0.0f;
+			// The depth target clears to 1 and accumulates the nearest translucent
+			// surface with MIN. Values below 1 identify populated texels.
+			bHasCaster = CasterDepth < (1.0f - 1e-8f);
 		}
 
 		const float3 CascadeTint = SampleColoredShadow(CascadeUV, ReceiverDepth);

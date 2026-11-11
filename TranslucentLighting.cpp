@@ -856,10 +856,11 @@ void FProjectedShadowInfo::RenderColoredTranslucencyDepths(FRHICommandList& RHIC
 	RHICmdList.SetViewport(CellRect.Min.X, CellRect.Min.Y, 0.0f, CellRect.Max.X, CellRect.Max.Y, 1.0f);
 
 	DrawRenderState.SetDepthStencilState(TStaticDepthStencilState<false, CF_Always>::GetRHI());
-	// RT0 RGB: multiply the transmittance (dst *= src). RT1 R: keep the farthest (maximum) translucent depth, 32 bit.
+	// RT0 RGB: multiply the transmittance (dst *= src). RT1 R: keep the nearest translucent depth, 32 bit.
+	// A receiver just behind the first glass surface must already receive its tint.
 	DrawRenderState.SetBlendState(TStaticBlendState<
 		CW_RGB, BO_Add, BF_Zero, BF_SourceColor, BO_Add, BF_One, BF_Zero,
-		CW_RED, BO_Max, BF_One, BF_One, BO_Max, BF_One, BF_One>::GetRHI());
+		CW_RED, BO_Min, BF_One, BF_One, BO_Min, BF_One, BF_One>::GetRHI());
 
 	FMeshCommandOneFrameArray VisibleMeshDrawCommands;
 	FDynamicPassMeshDrawListContext DrawContext(DynamicMeshDrawCommandStorage, VisibleMeshDrawCommands, GraphicsMinimalPipelineStateSet, NeedsShaderInitialisation);
