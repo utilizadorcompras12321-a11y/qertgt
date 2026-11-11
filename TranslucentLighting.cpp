@@ -683,6 +683,7 @@ public:
 		PassUniformBuffer.Bind(Initializer.ParameterMap, FColoredCascadePassUniformParameters::StaticStructMetadata.GetShaderVariableName());
 		TranslucentShadowStartOffset.Bind(Initializer.ParameterMap, TEXT("TranslucentShadowStartOffset"));
 		NativeOpaqueShadowDepthTexture.Bind(Initializer.ParameterMap, TEXT("NativeOpaqueShadowDepthTexture"));
+		NativeOpaqueShadowDepthTextureSampler.Bind(Initializer.ParameterMap, TEXT("NativeOpaqueShadowDepthTextureSampler"));
 		NativeOpaqueShadowDepthAtlasOrigin.Bind(Initializer.ParameterMap, TEXT("NativeOpaqueShadowDepthAtlasOrigin"));
 	}
 
@@ -698,13 +699,18 @@ public:
 	{
 		FMeshMaterialShader::GetShaderBindings(Scene, FeatureLevel, PrimitiveSceneProxy, MaterialRenderProxy, Material, DrawRenderState, ShaderElementData, ShaderBindings);
 		ShaderBindings.Add(TranslucentShadowStartOffset, ShaderElementData.TranslucentShadowStartOffset);
-		ShaderBindings.Add(NativeOpaqueShadowDepthTexture, ShaderElementData.NativeOpaqueShadowDepthTexture);
+		ShaderBindings.AddTexture(
+			NativeOpaqueShadowDepthTexture,
+			NativeOpaqueShadowDepthTextureSampler,
+			TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI(),
+			ShaderElementData.NativeOpaqueShadowDepthTexture.GetReference());
 		ShaderBindings.Add(NativeOpaqueShadowDepthAtlasOrigin, ShaderElementData.NativeOpaqueShadowDepthAtlasOrigin);
 	}
 
 private:
 	LAYOUT_FIELD(FShaderParameter, TranslucentShadowStartOffset);
 	LAYOUT_FIELD(FShaderResourceParameter, NativeOpaqueShadowDepthTexture);
+	LAYOUT_FIELD(FShaderResourceParameter, NativeOpaqueShadowDepthTextureSampler);
 	LAYOUT_FIELD(FShaderParameter, NativeOpaqueShadowDepthAtlasOrigin);
 };
 
