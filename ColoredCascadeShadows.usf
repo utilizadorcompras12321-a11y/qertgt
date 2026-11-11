@@ -95,7 +95,7 @@ void TintMainPS(in float4 SVPos : SV_POSITION, out float4 OutColor : SV_Target0)
 	// fade plane, then blends over it through its native FadePlaneLength region.
 	// This avoids a hard near split edge in the colored pass while preserving the
 	// far limit of each cascade.
-	const bool bInCascade = SceneW < SplitParams.y;
+	const bool bInCascade = SceneW >= SplitParams.x && SceneW < SplitParams.y;
 	if (bInCascade)
 	{
 		float4 ShadowPosition = mul(ScreenPosition, ScreenToShadow);
