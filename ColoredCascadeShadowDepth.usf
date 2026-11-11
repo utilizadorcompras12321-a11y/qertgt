@@ -13,6 +13,10 @@
 #include "/Engine/Generated/Material.ush"
 #include "/Engine/Generated/VertexFactory.ush"
 
+// Native opaque CSM depth atlas. Conventional depth: clear=1, nearer values are smaller.
+Texture2D<float> NativeOpaqueShadowDepthTexture;
+float4 NativeOpaqueShadowDepthUVScaleBias;
+
 struct FColoredShadowVSToPS
 {
 	FVertexFactoryInterpolantsVSToPS FactoryInterpolants;
@@ -75,12 +79,22 @@ void MainPS(
 	// casters behind nearby receivers and makes their shadows vanish near the ground.
 	const float ShadowDepth = Inputs.ShadowDepth + TranslucentShadowStartOffset;
 
-	// As in the native translucency pass, there is no manual opaque-depth rejection here.
-	const float Opacity = saturate(GetMaterialOpacity(PixelMaterialInputs) * GetMaterialTranslucentShadowDensityScale());
+	// Reject translucent fragments hidden behind the closest opaque caster in the
+	// native CSM atlas. This pass uses a cascade-local viewport, so restore the
+	// native atlas tile origin before loading its depth.
+	uint OpaqueDepthWidth, OpaqueDepthHeight;
+	NativeOpaqueShadowDepthTexture.GetDimensions(OpaqueDepthWidth, OpaqueDepthHeight);
+	const int2 CascadePixel = int2(SvPosition.xy);
+	const int2 AtlasOrigin = int2(
+		NativeOpaqueShadowDepthUVScaleBias.z / NativeOpaqueShadowDepthUVScaleBias.x,
+		NativeOpaqueShadowDepthUVScaleBias.w / NativeOpaqueShadowDepthUVScaleBias.y);
+	const int2 AtlasPixel = clamp(CascadePixel + AtlasOrigin, int2(0, 0), int2(OpaqueDepthWidth - 1, OpaqueDepthHeight - 1));
+	const float OpaqueDepth = NativeOpaqueShadowDepthTexture.Load(int3(AtlasPixel, 0)).r;
+	// Native shadow depth is cleared to 1 and uses LESS/equal. A larger
+	// translucent depth is behind opaque geometry and must not tint the light.
+	clip(OpaqueDepth + 1.0e-5f - ShadowDepth);
 
-	// Match the native directional-light translucency pass: do not perform a second
-	// manual comparison against the opaque CSM depth. Opaque shadowing is evaluated
-	// later by the regular deferred-light shadow path.
+	const float Opacity = saturate(GetMaterialOpacity(PixelMaterialInputs) * GetMaterialTranslucentShadowDensityScale());
 	// Practically invisible surfaces neither tint nor register a depth.
 	clip(Opacity - 1e-5f);
 
