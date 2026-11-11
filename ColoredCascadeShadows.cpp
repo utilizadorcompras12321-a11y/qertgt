@@ -32,6 +32,12 @@ static TAutoConsoleVariable<float> CVarColoredCascadeShadowsStrength(
 	TEXT("Blend between no tint (0) and full colored translucent shadow (1)."),
 	ECVF_RenderThreadSafe);
 
+static TAutoConsoleVariable<float> CVarColoredCascadeShadowsDepthTransitionScale(
+	TEXT("r.ColoredShadowMaps.DepthTransitionScale"),
+	0.1f,
+	TEXT("Scales the depth fade region between a translucent caster and its receiver. Lower values preserve colored shadows closer to contact; 1 uses the native CSM transition size."),
+	ECVF_RenderThreadSafe);
+
 static TAutoConsoleVariable<int32> CVarColoredCascadeShadowsDebug(
 	TEXT("r.ColoredShadowMaps.Debug"),
 	0,
@@ -246,7 +252,9 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			TintParameters->CascadeColorTexture = CascadeColorTexture;
 			TintParameters->CascadeDepthTexture = CascadeDepthTexture;
 			TintParameters->ScreenToShadow = GetScreenToColoredShadowMatrix(Shadow, View);
-			TintParameters->InvDepthTransition = 1.0f / Shadow->ComputeTransitionSize();
+			const float DepthTransitionScale = FMath::Clamp(CVarColoredCascadeShadowsDepthTransitionScale.GetValueOnRenderThread(), 0.01f, 4.0f);
+			const float DepthTransitionSize = FMath::Max(Shadow->ComputeTransitionSize() * DepthTransitionScale, 1.0e-6f);
+			TintParameters->InvDepthTransition = 1.0f / DepthTransitionSize;
 			const FShadowCascadeSettings& Cascade = Shadow->CascadeSettings;
 			const float InvFadePlaneLength = Cascade.FadePlaneLength > 0.0f ? 1.0f / Cascade.FadePlaneLength : 0.0f;
 			TintParameters->SplitParams = FVector4(Cascade.SplitNear, Cascade.SplitFar, Cascade.FadePlaneOffset, InvFadePlaneLength);
