@@ -99,9 +99,13 @@ void TintMainPS(in float4 SVPos : SV_POSITION, out float4 OutColor : SV_Target0)
 	if (bInCascade)
 	{
 		float4 ShadowPosition = mul(ScreenPosition, ScreenToShadow);
+
+		// Match the native ShadowProjectionPixelShader: receiver depth is the
+		// homogeneous light-space Z before the perspective divide. Only UV uses W.
+		const float ReceiverDepth = ShadowPosition.z;
 		const float SafeW = (ShadowPosition.w < 0.0f ? -1.0f : 1.0f) * max(abs(ShadowPosition.w), 1e-8f);
-		ShadowPosition.xyz /= SafeW;
-		const float3 CascadeTint = SampleColoredShadow(ShadowPosition.xy, ShadowPosition.z);
+		ShadowPosition.xy /= SafeW;
+		const float3 CascadeTint = SampleColoredShadow(ShadowPosition.xy, ReceiverDepth);
 		const float Blend = SplitParams.w > 0.0f
 			? 1.0f - saturate((SceneW - SplitParams.z) * SplitParams.w)
 			: 1.0f;
