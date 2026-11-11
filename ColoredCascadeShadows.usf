@@ -16,31 +16,67 @@ int DebugMode;
 float3 SampleColoredShadow(float2 CascadeUV, float ReceiverZ)
 {
 	if (any(CascadeUV < 0.0f) || any(CascadeUV > 1.0f)) return 1.0f;
+
 	uint Width, Height;
 	CascadeColorTexture.GetDimensions(Width, Height);
-	const float2 TexelPos = CascadeUV * float2(Width, Height) - 0.5f;
-	const float2 Base = floor(TexelPos);
-	const float2 Frac = TexelPos - Base;
-	float3 Result = 0.0f;
-	UNROLL
-	for (int Y = 0; Y < 2; ++Y)
+
+	// Match UE's non-Gather high-quality CSM PCF path:
+	// 7x7 point samples are shared by four overlapping 3x3 PCF evaluations.
+	const float2 TexelPosition = CascadeUV * float2(Width, Height);
+	const float2 Fraction = frac(TexelPosition);
+	const float2 FirstTexel = floor(TexelPosition) - 3.0f;
+
+	float3 Samples[49];
+
+	// Compare depth per texel before filtering, just like CalculateOcclusion() in UE.
+	[unroll]
+	for (int Y = 0; Y < 7; ++Y)
 	{
-		UNROLL
-		for (int X = 0; X < 2; ++X)
+		[unroll]
+		for (int X = 0; X < 7; ++X)
 		{
-			const float2 Texel = clamp(Base + float2(X, Y), 0.0f, float2(Width - 1, Height - 1));
-			const int3 LoadPos = int3(int2(Texel), 0);
-			const float3 Transmittance = CascadeColorTexture.Load(LoadPos).rgb;
-			const float FarthestCasterDepth = CascadeDepthTexture.Load(LoadPos).r;
-			const float DepthDelta = ReceiverZ - FarthestCasterDepth;
-			// Match UE's native directional-shadow soft comparison: a linear saturate ramp.
-			const float Behind = saturate(DepthDelta * InvDepthTransition);
-			const float3 Tinted = lerp(1.0f, Transmittance, Behind);
-			const float Weight = (X == 0 ? 1.0f - Frac.x : Frac.x) * (Y == 0 ? 1.0f - Frac.y : Frac.y);
-			Result += Tinted * Weight;
+			const float2 Texel = clamp(FirstTexel + float2(X, Y), 0.0f, float2(Width - 1, Height - 1));
+			const int3 LoadPosition = int3(int2(Texel), 0);
+			const float3 Transmittance = CascadeColorTexture.Load(LoadPosition).rgb;
+			const float CasterDepth = CascadeDepthTexture.Load(LoadPosition).r;
+			const float Behind = saturate((ReceiverZ - CasterDepth) * InvDepthTransition);
+			Samples[Y * 7 + X] = lerp(1.0f, Transmittance, Behind);
 		}
 	}
-	return Result;
+
+	// Each 3x3 PCF result averages nine bilinear comparisons. Four overlapping
+	// windows reproduce UE's 6x6 PCF footprint using the shared 7x7 texel grid.
+	float3 Result = 0.0f;
+	[unroll]
+	for (int WindowY = 0; WindowY < 2; ++WindowY)
+	{
+		[unroll]
+		for (int WindowX = 0; WindowX < 2; ++WindowX)
+		{
+			float3 WindowResult = 0.0f;
+			[unroll]
+			for (int Y = 0; Y < 3; ++Y)
+			{
+				[unroll]
+				for (int X = 0; X < 3; ++X)
+				{
+					const int SX = WindowX + X;
+					const int SY = WindowY + Y;
+					const float3 Top = lerp(
+						Samples[SY * 7 + SX],
+						Samples[SY * 7 + SX + 1],
+						Fraction.x);
+					const float3 Bottom = lerp(
+						Samples[(SY + 1) * 7 + SX],
+						Samples[(SY + 1) * 7 + SX + 1],
+						Fraction.x);
+					WindowResult += lerp(Top, Bottom, Fraction.y);
+				}
+			}
+			Result += WindowResult * (1.0f / 36.0f);
+		}
+	}
+	return saturate(Result);
 }
 
 void TintMainPS(in float4 SVPos : SV_POSITION, out float4 OutColor : SV_Target0)
