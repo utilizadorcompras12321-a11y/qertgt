@@ -30,8 +30,8 @@ float3 SampleColoredShadow(float2 CascadeUV, float ReceiverZ)
 			const float2 Texel = clamp(Base + float2(X, Y), 0.0f, float2(Width - 1, Height - 1));
 			const int3 LoadPos = int3(int2(Texel), 0);
 			const float3 Transmittance = CascadeColorTexture.Load(LoadPos).rgb;
-			const float NearestCasterDepth = CascadeDepthTexture.Load(LoadPos).r;
-			const float DepthDelta = ReceiverZ - NearestCasterDepth;
+			const float FarthestCasterDepth = CascadeDepthTexture.Load(LoadPos).r;
+			const float DepthDelta = ReceiverZ - FarthestCasterDepth;
 			const float DepthTransition = max(fwidth(DepthDelta), 1e-6f);
 			const float Behind = smoothstep(-DepthTransition, DepthTransition, DepthDelta);
 			const float3 Tinted = lerp(1.0f, Transmittance, Behind);
