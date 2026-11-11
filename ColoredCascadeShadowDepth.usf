@@ -33,25 +33,23 @@ void MainVS(
 	FMaterialVertexParameters VertexParameters = GetMaterialVertexParameters(Input, VFIntermediates, WorldPos.xyz, TangentToLocal);
 	WorldPos.xyz += GetMaterialWorldPositionOffset(VertexParameters);
 
-	const float4 ClipPos = mul(float4(WorldPos.xyz, 1), ColoredCascadePass.ProjectionMatrix);
+	// This is the UE4.27.2 TranslucentShadowDepthShaders.usf path for
+	// TranslucencyShadowDepth_Standard, reproduced for the RGB MRT pass.
+	// Keep the native order of operations, including the native near-plane
+	// clamp of BOTH Z and W. Do not replace this with a custom clamp.
+	float4 ShadowClipPosition = mul(float4(WorldPos.xyz, 1), ColoredCascadePass.ProjectionMatrix);
 
-	// Match the native directional-light translucency depth convention:
-	// normalize projected light-space Z with InvMaxSubjectDepth, then use that
-	// same normalized value for both the interpolant and SV_POSITION.z.
-	// Keeping W unchanged is essential: changing it moves the caster in XY.
-	const float InvMaxSubjectDepth = ColoredCascadePass.ShadowParams.w;
-	float ShadowDepth = ClipPos.z * InvMaxSubjectDepth;
-
-	// Match the native whole-scene directional shadow near-plane clamp.
-	// Clamp the depth value, not W. The tiny positive value keeps the vertex
-	// inside the D3D clip volume without changing its projected XY position.
-	if (ColoredCascadePass.bClampToNearPlane > 0.0f && ShadowDepth < 0.0f)
+	if (ColoredCascadePass.bClampToNearPlane > 0.0f && ShadowClipPosition.z < 0.0f)
 	{
-		ShadowDepth = 0.000001f * InvMaxSubjectDepth;
+		ShadowClipPosition.z = 0.000001f;
+		ShadowClipPosition.w = 1.0f;
 	}
 
+	const float ShadowDepth = ShadowClipPosition.z * ColoredCascadePass.ShadowParams.w;
+	ShadowClipPosition.z = ShadowDepth * ShadowClipPosition.w;
+
 	Output.ShadowDepth = ShadowDepth;
-	OutPosition = float4(ClipPos.xy, ShadowDepth * ClipPos.w, ClipPos.w);
+	OutPosition = ShadowClipPosition;
 
 	Output.FactoryInterpolants = VertexFactoryGetInterpolantsVSToPS(Input, VFIntermediates, VertexParameters);
 }
