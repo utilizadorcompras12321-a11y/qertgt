@@ -10,6 +10,7 @@ Texture2D CascadeDepthTexture;
 float4x4 ScreenToShadow;
 float4 SplitParams; // SplitNear, SplitFar, FadePlaneOffset, InvFadePlaneLength
 float Strength;
+float4 DepthParams; // normalized depth bias, inverse normalized transition length
 int DebugMode;
 
 float3 SampleColoredShadow(float2 CascadeUV, float ReceiverZ)
@@ -31,9 +32,10 @@ float3 SampleColoredShadow(float2 CascadeUV, float ReceiverZ)
 			const int3 LoadPos = int3(int2(Texel), 0);
 			const float3 Transmittance = CascadeColorTexture.Load(LoadPos).rgb;
 			const float NearestCasterDepth = CascadeDepthTexture.Load(LoadPos).r;
-			const float DepthDelta = ReceiverZ - NearestCasterDepth;
-			const float DepthTransition = max(fwidth(DepthDelta), 1e-6f);
-			const float Behind = smoothstep(-DepthTransition, DepthTransition, DepthDelta);
+			// Use the same fixed world-space depth bias and transition as the
+			// previously working implementation, normalized per cascade on the CPU.
+			const float Behind = saturate(
+				(ReceiverZ - NearestCasterDepth - DepthParams.x) * DepthParams.y);
 			const float3 Tinted = lerp(1.0f, Transmittance, Behind);
 			const float Weight = (X == 0 ? 1.0f - Frac.x : Frac.x) * (Y == 0 ? 1.0f - Frac.y : Frac.y);
 			Result += Tinted * Weight;
