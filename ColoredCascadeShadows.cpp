@@ -216,7 +216,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 				CascadeExtent, PF_FloatRGBA, FClearValueBinding::White,
 				TexCreate_RenderTargetable | TexCreate_ShaderResource);
 			const FRDGTextureDesc DepthDesc = FRDGTextureDesc::Create2D(
-				CascadeExtent, PF_R32_FLOAT, FClearValueBinding::Black,
+				CascadeExtent, PF_R32_FLOAT, FClearValueBinding::White,
 				TexCreate_RenderTargetable | TexCreate_ShaderResource);
 			FRDGTextureRef CascadeColorTexture = GraphBuilder.CreateTexture(ColorDesc, TEXT("ColoredCascadeTransmittance"));
 			FRDGTextureRef CascadeDepthTexture = GraphBuilder.CreateTexture(DepthDesc, TEXT("ColoredCascadeTranslucentDepth"));
