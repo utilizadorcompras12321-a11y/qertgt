@@ -78,6 +78,7 @@ class FColoredCascadeTintPS : public FGlobalShader
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, CascadeColorTexture)
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, CascadeDepthTexture)
 		SHADER_PARAMETER(FMatrix, ScreenToShadow)
+		SHADER_PARAMETER(float, InvDepthTransition)
 		SHADER_PARAMETER(FVector4, SplitParams)
 		SHADER_PARAMETER(float, Strength)
 		SHADER_PARAMETER(int32, DebugMode)
@@ -245,6 +246,7 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			TintParameters->CascadeColorTexture = CascadeColorTexture;
 			TintParameters->CascadeDepthTexture = CascadeDepthTexture;
 			TintParameters->ScreenToShadow = GetScreenToColoredShadowMatrix(Shadow, View);
+			TintParameters->InvDepthTransition = 1.0f / Shadow->ComputeTransitionSize();
 			const FShadowCascadeSettings& Cascade = Shadow->CascadeSettings;
 			const float InvFadePlaneLength = Cascade.FadePlaneLength > 0.0f ? 1.0f / Cascade.FadePlaneLength : 0.0f;
 			TintParameters->SplitParams = FVector4(Cascade.SplitNear, Cascade.SplitFar, Cascade.FadePlaneOffset, InvFadePlaneLength);
