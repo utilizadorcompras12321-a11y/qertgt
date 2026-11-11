@@ -16,7 +16,7 @@
 struct FColoredShadowVSToPS
 {
 	FVertexFactoryInterpolantsVSToPS FactoryInterpolants;
-	noperspective float ShadowDepth : TEXCOORD6;
+	float ShadowDepth : TEXCOORD6;
 };
 
 void MainVS(
@@ -35,21 +35,23 @@ void MainVS(
 
 	const float4 ClipPos = mul(float4(WorldPos.xyz, 1), ColoredCascadePass.ProjectionMatrix);
 
-	// The depth is passed as an interpolant instead of through SV_POSITION: no depth buffer is bound, and this way casters in front of
-	// the cascade near plane are clamped (bClampToNearPlane) instead of being clipped.
-	float4 ShadowClipPos = ClipPos;
-	if (ColoredCascadePass.bClampToNearPlane > 0.0f && ShadowClipPos.z < 0.0f)
+	// Match the native directional-light translucency depth convention:
+	// normalize projected light-space Z with InvMaxSubjectDepth, then use that
+	// same normalized value for both the interpolant and SV_POSITION.z.
+	// Keeping W unchanged is essential: changing it moves the caster in XY.
+	const float InvMaxSubjectDepth = ColoredCascadePass.ShadowParams.w;
+	float ShadowDepth = ClipPos.z * InvMaxSubjectDepth;
+
+	// Match the native whole-scene directional shadow near-plane clamp.
+	// Clamp the depth value, not W. The tiny positive value keeps the vertex
+	// inside the D3D clip volume without changing its projected XY position.
+	if (ColoredCascadePass.bClampToNearPlane > 0.0f && ShadowDepth < 0.0f)
 	{
-		// Clamp only the clip-space depth. Replacing W changes the projected XY
-		// position (XY/W) and deforms the caster near the cascade near plane.
-		ShadowClipPos.z = 0.000001f * ShadowClipPos.w;
+		ShadowDepth = 0.000001f * InvMaxSubjectDepth;
 	}
 
-	// Store linear normalized light-space depth for the RGB receiver comparison.
-	// The colored pass has no hardware depth attachment; this value is accumulated
-	// separately in the second render target and compared in the screen-space pass.
-	Output.ShadowDepth = max(ShadowClipPos.z * ColoredCascadePass.ShadowParams.w, 0.0f);
-	OutPosition = float4(ShadowClipPos.xy, 0.5f * ShadowClipPos.w, ShadowClipPos.w);
+	Output.ShadowDepth = ShadowDepth;
+	OutPosition = float4(ClipPos.xy, ShadowDepth * ClipPos.w, ClipPos.w);
 
 	Output.FactoryInterpolants = VertexFactoryGetInterpolantsVSToPS(Input, VFIntermediates, VertexParameters);
 }
