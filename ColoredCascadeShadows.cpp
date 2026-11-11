@@ -80,6 +80,7 @@ class FColoredCascadeTintPS : public FGlobalShader
 		SHADER_PARAMETER(FMatrix, ScreenToShadow)
 		SHADER_PARAMETER(FVector4, SplitParams)
 		SHADER_PARAMETER(float, Strength)
+		SHADER_PARAMETER(FVector4, DepthParams)
 		SHADER_PARAMETER(int32, DebugMode)
 		RENDER_TARGET_BINDING_SLOTS()
 	END_SHADER_PARAMETER_STRUCT()
@@ -249,6 +250,17 @@ FRDGTextureRef RenderColoredCascadeShadowTint(
 			const float InvFadePlaneLength = Cascade.FadePlaneLength > 0.0f ? 1.0f / Cascade.FadePlaneLength : 0.0f;
 			TintParameters->SplitParams = FVector4(Cascade.SplitNear, Cascade.SplitFar, Cascade.FadePlaneOffset, InvFadePlaneLength);
 			TintParameters->Strength = Strength * FMath::Clamp(Shadow->FadeAlphas[ViewIndex], 0.0f, 1.0f);
+
+			// Match the deprecated receiver test: fixed world-space tolerance,
+			// converted to this cascade's normalized light-depth range.
+			// This avoids a screen-derivative-dependent transition at intersections.
+			const float InvDepthRange = Shadow->InvMaxSubjectDepth;
+			const float DepthBiasWorld = 5.0f;
+			const float DepthTransitionWorld = 30.0f;
+			TintParameters->DepthParams = FVector4(
+				DepthBiasWorld * InvDepthRange,
+				1.0f / FMath::Max(DepthTransitionWorld * InvDepthRange, 1e-6f),
+				0.0f, 0.0f);
 			TintParameters->DebugMode = DebugMode;
 			TintParameters->RenderTargets[0] = FRenderTargetBinding(NextTintTexture, ERenderTargetLoadAction::ELoad);
 			TShaderMapRef<FColoredCascadeTintPS> PixelShader(View.ShaderMap);
