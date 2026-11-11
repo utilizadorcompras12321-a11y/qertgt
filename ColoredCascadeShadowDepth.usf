@@ -1,7 +1,7 @@
 // Colored translucent cascaded shadow maps (custom addition for UE 4.27.2).
-// Caster pass: reproduces the native directional TranslucencyShadowDepth_Standard depth convention.
+// Caster pass: renders translucent meshes into a standalone native-resolution cascade target.
 //   SV_Target0 RGB = colored transmittance (blended multiplicatively, dst *= src)
-//   SV_Target1 R   = nearest translucent depth, using the same normalized SV_Position.z as the native pass.
+//   SV_Target1 R   = farthest translucent depth (32 bit float, blended with MAX) in the same normalized light space the receiver lookup uses
 
 #define USE_STENCIL_LOD_DITHER 0
 
@@ -16,6 +16,7 @@
 struct FColoredShadowVSToPS
 {
 	FVertexFactoryInterpolantsVSToPS FactoryInterpolants;
+	noperspective float ShadowDepth : TEXCOORD6;
 };
 
 void MainVS(
@@ -32,22 +33,23 @@ void MainVS(
 	FMaterialVertexParameters VertexParameters = GetMaterialVertexParameters(Input, VFIntermediates, WorldPos.xyz, TangentToLocal);
 	WorldPos.xyz += GetMaterialWorldPositionOffset(VertexParameters);
 
-	// Exact directional-light projection used by TranslucencyShadowDepth_Standard.
-	float4 ShadowPosition = mul(float4(WorldPos.xyz, 1.0f), ColoredCascadePass.ProjectionMatrix);
+	const float4 ClipPos = mul(float4(WorldPos.xyz, 1), ColoredCascadePass.ProjectionMatrix);
 
-	// Match SetShadowDepthOutputs in TranslucentShadowDepthShaders.usf.
-	// UE clamps both Z and W for vertices in front of a whole-scene directional near plane.
-	if (ColoredCascadePass.bClampToNearPlane > 0.0f && ShadowPosition.z < 0.0f)
+	// The depth is passed as an interpolant instead of through SV_POSITION: no depth buffer is bound, and this way casters in front of
+	// the cascade near plane are clamped (bClampToNearPlane) instead of being clipped.
+	float4 ShadowClipPos = ClipPos;
+	if (ColoredCascadePass.bClampToNearPlane > 0.0f && ShadowClipPos.z < 0.0f)
 	{
-		ShadowPosition.z = 0.000001f;
-		ShadowPosition.w = 1.0f;
+		// Clamp only the clip-space depth. Replacing W changes the projected XY
+		// position (XY/W) and deforms the caster near the cascade near plane.
+		ShadowClipPos.z = 0.000001f * ShadowClipPos.w;
 	}
 
-	// Native standard directional translucency depth:
-	// normalize clip Z by InvMaxSubjectDepth, then restore homogeneous clip Z.
-	const float ShadowDepth = ShadowPosition.z * ColoredCascadePass.ShadowParams.w;
-	ShadowPosition.z = ShadowDepth * ShadowPosition.w;
-	OutPosition = ShadowPosition;
+	// Store linear normalized light-space depth for the RGB receiver comparison.
+	// The colored pass has no hardware depth attachment; this value is accumulated
+	// separately in the second render target and compared in the screen-space pass.
+	Output.ShadowDepth = max(ShadowClipPos.z * ColoredCascadePass.ShadowParams.w, 0.0f);
+	OutPosition = float4(ShadowClipPos.xy, 0.5f * ShadowClipPos.w, ShadowClipPos.w);
 
 	Output.FactoryInterpolants = VertexFactoryGetInterpolantsVSToPS(Input, VFIntermediates, VertexParameters);
 }
@@ -66,21 +68,30 @@ void MainPS(
 	FPixelMaterialInputs PixelMaterialInputs;
 	CalcMaterialParameters(MaterialParameters, PixelMaterialInputs, SvPosition, 1);
 
+	// Match the native translucent shadow pass: apply material clipping and the per-material depth start offset.
 	GetMaterialClippingShadowDepth(MaterialParameters, PixelMaterialInputs);
+	// Keep the RGB caster depth free of the large native CSM bias. That bias exists
+	// to prevent opaque surfaces from self-shadowing, but it pushes thin translucent
+	// casters behind nearby receivers and makes their shadows vanish near the ground.
+	const float ShadowDepth = Inputs.ShadowDepth + TranslucentShadowStartOffset;
 
-	// SV_Position.z is now the rasterized, normalized depth produced by the same
-	// projection convention as the native directional translucency pass.
-	const float ShadowDepth = SvPosition.z + TranslucentShadowStartOffset;
-
+	// As in the native translucency pass, there is no manual opaque-depth rejection here.
 	const float Opacity = saturate(GetMaterialOpacity(PixelMaterialInputs) * GetMaterialTranslucentShadowDensityScale());
+
+	// Match the native directional-light translucency pass: do not perform a second
+	// manual comparison against the opaque CSM depth. Opaque shadowing is evaluated
+	// later by the regular deferred-light shadow path.
+	// Practically invisible surfaces neither tint nor register a depth.
 	clip(Opacity - 1e-5f);
 
+	// Tint color: Base Color for lit translucent materials, Emissive Color for unlit ones (their Base Color pin does not exist).
 #if MATERIAL_SHADINGMODEL_UNLIT
 	const float3 TintColor = saturate(GetMaterialEmissive(PixelMaterialInputs));
 #else
 	const float3 TintColor = saturate(GetMaterialBaseColor(PixelMaterialInputs));
 #endif
 
+	// Fraction of each color channel of the light that makes it through the surface.
 	OutColor = float4(lerp(1.0f, TintColor, Opacity), 1.0f);
 	OutDepth = ShadowDepth;
 }
