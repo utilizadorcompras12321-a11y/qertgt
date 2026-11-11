@@ -683,7 +683,7 @@ public:
 		PassUniformBuffer.Bind(Initializer.ParameterMap, FColoredCascadePassUniformParameters::StaticStructMetadata.GetShaderVariableName());
 		TranslucentShadowStartOffset.Bind(Initializer.ParameterMap, TEXT("TranslucentShadowStartOffset"));
 		NativeOpaqueShadowDepthTexture.Bind(Initializer.ParameterMap, TEXT("NativeOpaqueShadowDepthTexture"));
-		NativeOpaqueShadowDepthAtlasOrigin.Bind(Initializer.ParameterMap, TEXT("NativeOpaqueShadowDepthUVScaleBias"));
+		NativeOpaqueShadowDepthAtlasOrigin.Bind(Initializer.ParameterMap, TEXT("NativeOpaqueShadowDepthAtlasOrigin"));
 	}
 
 	void GetShaderBindings(
@@ -699,13 +699,13 @@ public:
 		FMeshMaterialShader::GetShaderBindings(Scene, FeatureLevel, PrimitiveSceneProxy, MaterialRenderProxy, Material, DrawRenderState, ShaderElementData, ShaderBindings);
 		ShaderBindings.Add(TranslucentShadowStartOffset, ShaderElementData.TranslucentShadowStartOffset);
 		ShaderBindings.Add(NativeOpaqueShadowDepthTexture, ShaderElementData.NativeOpaqueShadowDepthTexture);
-		ShaderBindings.Add(NativeOpaqueShadowDepthUVScaleBias, ShaderElementData.NativeOpaqueShadowDepthUVScaleBias);
+		ShaderBindings.Add(NativeOpaqueShadowDepthAtlasOrigin, ShaderElementData.NativeOpaqueShadowDepthAtlasOrigin);
 	}
 
 private:
 	LAYOUT_FIELD(FShaderParameter, TranslucentShadowStartOffset);
 	LAYOUT_FIELD(FShaderResourceParameter, NativeOpaqueShadowDepthTexture);
-	LAYOUT_FIELD(FShaderParameter, NativeOpaqueShadowDepthUVScaleBias);
+	LAYOUT_FIELD(FShaderParameter, NativeOpaqueShadowDepthAtlasOrigin);
 };
 
 IMPLEMENT_MATERIAL_SHADER_TYPE(, FColoredCascadeShadowVS, TEXT("/Engine/Private/ColoredCascadeShadowDepth.usf"), TEXT("MainVS"), SF_Vertex);
