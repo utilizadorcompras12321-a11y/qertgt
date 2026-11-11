@@ -15,7 +15,7 @@
 
 // Native opaque CSM depth atlas. Conventional depth: clear=1, nearer values are smaller.
 Texture2D<float> NativeOpaqueShadowDepthTexture;
-float4 NativeOpaqueShadowDepthUVScaleBias;
+float4 NativeOpaqueShadowDepthAtlasOrigin;
 
 struct FColoredShadowVSToPS
 {
@@ -85,9 +85,7 @@ void MainPS(
 	uint OpaqueDepthWidth, OpaqueDepthHeight;
 	NativeOpaqueShadowDepthTexture.GetDimensions(OpaqueDepthWidth, OpaqueDepthHeight);
 	const int2 CascadePixel = int2(SvPosition.xy);
-	const int2 AtlasOrigin = int2(
-		NativeOpaqueShadowDepthUVScaleBias.z / NativeOpaqueShadowDepthUVScaleBias.x,
-		NativeOpaqueShadowDepthUVScaleBias.w / NativeOpaqueShadowDepthUVScaleBias.y);
+	const int2 AtlasOrigin = int2(NativeOpaqueShadowDepthAtlasOrigin.xy);
 	const int2 AtlasPixel = clamp(CascadePixel + AtlasOrigin, int2(0, 0), int2(OpaqueDepthWidth - 1, OpaqueDepthHeight - 1));
 	const float OpaqueDepth = NativeOpaqueShadowDepthTexture.Load(int3(AtlasPixel, 0)).r;
 	// Native shadow depth is cleared to 1 and uses LESS/equal. A larger
