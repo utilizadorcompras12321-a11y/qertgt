@@ -12,6 +12,7 @@ float InvDepthTransition;
 float4 SplitParams; // SplitNear, SplitFar, FadePlaneOffset, InvFadePlaneLength
 float Strength;
 int DebugMode;
+int CascadeIndex;
 
 float3 SampleColoredShadow(float2 CascadeUV, float ReceiverZ)
 {
@@ -120,7 +121,7 @@ void TintMainPS(in float4 SVPos : SV_POSITION, out float4 OutColor : SV_Target0)
 			CasterTransmittance = CascadeColorTexture.Load(LoadPosition).rgb;
 			// The depth target clears to 0 and accumulates the farthest translucent
 			// layer with MAX, so a positive value identifies a populated texel.
-			bHasCaster = CasterDepth > 1e-8f;
+			bHasCaster = CasterDepth > 0.0f;
 		}
 
 		const float3 CascadeTint = SampleColoredShadow(CascadeUV, ReceiverDepth);
