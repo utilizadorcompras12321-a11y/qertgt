@@ -17,7 +17,7 @@ index 9999999..aaaaaaa 100644
  
  namespace SoftwareRTMaterialCapture
  {
-@@ -10,15 +13,16 @@
+@@ -10,15 +15,16 @@
  	static bool ShouldCompile(const FMeshMaterialShaderPermutationParameters& Parameters)
  	{
  		const FMaterialShaderParameters& Material = Parameters.MaterialParameters;
@@ -35,7 +35,7 @@ index 9999999..aaaaaaa 100644
  			&& FMeshMaterialShader::ShouldCompilePermutation(Parameters);
  	}
  
-@@ -85,7 +88,148 @@
+@@ -85,7 +90,148 @@
  	IMPLEMENT_MATERIAL_SHADER_TYPE(
  		,
  		FSoftwareRTMaterialCapturePS,
