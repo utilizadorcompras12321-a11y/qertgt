@@ -1,0 +1,71 @@
+diff --git a/Engine/Source/Runtime/Engine/Classes/Materials/Material.h b/Engine/Source/Runtime/Engine/Classes/Materials/Material.h
+--- a/Engine/Source/Runtime/Engine/Classes/Materials/Material.h
++++ b/Engine/Source/Runtime/Engine/Classes/Materials/Material.h
+@@ -24808,6 +24808,13 @@
+ 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Usage)
+ 	uint8 bUsedWithGeometryCache : 1;
+ 
++	/**
++	 * Indicates that this material is eligible for Software RT Surface Cache capture.
++	 * Capture shader permutations are only generated for materials with this option enabled.
++	 */
++	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Usage, AdvancedDisplay)
++	uint8 bUsedWithSoftwareRTCapture : 1;
++
+ 	/** 
+ 	 * Indicates that the material and its instances can be used with static lighting
+ 	 * This will result in the shaders required to support static lighting being compiled which will increase shader compile time and memory usage.
+diff --git a/Engine/Source/Runtime/Engine/Private/Materials/Material.cpp b/Engine/Source/Runtime/Engine/Private/Materials/Material.cpp
+--- a/Engine/Source/Runtime/Engine/Private/Materials/Material.cpp
++++ b/Engine/Source/Runtime/Engine/Private/Materials/Material.cpp
+@@ -32540,6 +32540,7 @@
+ 	OpacityMaskClipValue = 0.3333f;
+ 	bCastDynamicShadowAsMasked = false;
+ 	bUsedWithStaticLighting = false;
++	bUsedWithSoftwareRTCapture = false;
+ PRAGMA_DISABLE_DEPRECATION_WARNINGS
+ 	D3D11TessellationMode = MTM_NoTessellation;
+ 	bEnableCrackFreeDisplacement = false;
+diff --git a/Engine/Source/Runtime/Engine/Public/MaterialShared.h b/Engine/Source/Runtime/Engine/Public/MaterialShared.h
+--- a/Engine/Source/Runtime/Engine/Public/MaterialShared.h
++++ b/Engine/Source/Runtime/Engine/Public/MaterialShared.h
+@@ -64790,6 +64790,7 @@
+ 	virtual bool IsTangentSpaceNormal() const { return false; }
+ 	virtual bool ShouldInjectEmissiveIntoLPV() const { return false; }
+ 	virtual bool ShouldBlockGI() const { return false; }
++	virtual bool IsUsedWithSoftwareRTCapture() const { return false; }
+ 	virtual bool ShouldGenerateSphericalParticleNormals() const { return false; }
+ 	virtual bool ShouldDisableDepthTest() const { return false; }
+ 	virtual bool ShouldWriteOnlyAlpha() const { return false; }
+@@ -105220,6 +105221,7 @@
+ 	ENGINE_API virtual bool IsTangentSpaceNormal() const override;
+ 	ENGINE_API virtual bool ShouldInjectEmissiveIntoLPV() const override;
+ 	ENGINE_API virtual bool ShouldBlockGI() const override;
++	ENGINE_API virtual bool IsUsedWithSoftwareRTCapture() const override;
+ 	ENGINE_API virtual bool ShouldGenerateSphericalParticleNormals() const override;
+ 	ENGINE_API virtual bool ShouldDisableDepthTest() const override;
+ 	ENGINE_API virtual bool ShouldWriteOnlyAlpha() const override;
+@@ -132165,6 +132167,7 @@
+ 			uint64 bIsUsedWithVirtualHeightfieldMesh : 1;
+ 			uint64 bIsStencilTestEnabled : 1;
++			uint64 bIsUsedWithSoftwareRTCapture : 1;
+ 		};
+ 	};
+ 
+@@ -132225,6 +132228,7 @@
+ 		bIsUsedWithVirtualHeightfieldMesh = InMaterial->IsUsedWithVirtualHeightfieldMesh();
+ 		bIsStencilTestEnabled = InMaterial->IsStencilTestEnabled();
++		bIsUsedWithSoftwareRTCapture = InMaterial->IsUsedWithSoftwareRTCapture();
+ 	}
+diff --git a/Engine/Source/Runtime/Engine/Private/Materials/MaterialShared.cpp b/Engine/Source/Runtime/Engine/Private/Materials/MaterialShared.cpp
+--- a/Engine/Source/Runtime/Engine/Private/Materials/MaterialShared.cpp
++++ b/Engine/Source/Runtime/Engine/Private/Materials/MaterialShared.cpp
+@@ -34768,6 +34768,7 @@
+ EMaterialDomain FMaterialResource::GetMaterialDomain() const { return Material->MaterialDomain; }
+ bool FMaterialResource::IsTangentSpaceNormal() const { return Material->bTangentSpaceNormal || (!Material->Normal.IsConnected() && !Material->bUseMaterialAttributes); }
+ bool FMaterialResource::ShouldInjectEmissiveIntoLPV() const { return Material->bUseEmissiveForDynamicAreaLighting; }
+ bool FMaterialResource::ShouldBlockGI() const { return Material->bBlockGI; }
++bool FMaterialResource::IsUsedWithSoftwareRTCapture() const { return Material->bUsedWithSoftwareRTCapture; }
+ bool FMaterialResource::ShouldGenerateSphericalParticleNormals() const { return Material->bGenerateSphericalParticleNormals; }
+ bool FMaterialResource::ShouldDisableDepthTest() const { return Material->bDisableDepthTest; }
+ bool FMaterialResource::ShouldWriteOnlyAlpha() const { return Material->bWriteOnlyAlpha; }
