@@ -66,8 +66,8 @@ The capture system must resolve the actual per-instance material used by the ren
 
 UE4.27 source facts checked in mirror `AlexMercer-MA/UnrealEngine-4.27`, commit `306a7e9f7fb53f14c2cb3bfd3854ad906710a17e`:
 
-- `FPrimitiveSceneProxy::GetMeshDescription(int32 LODIndex, TArray<FMeshBatch>& OutMeshElements) const` exists and is documented to gather mesh descriptions without view consideration.
-- `FStaticMeshSceneProxy::GetMeshDescription` emits batches by LOD section and batch, using `GetMeshElement`; each batch carries its actual `MaterialRenderProxy`.
+- `FPrimitiveSceneProxy::GetMeshDescription(int32 LODIndex, TArray<FMeshBatch>& OutMeshElements) const` exists and is documented to gather mesh descriptions without view consideration. Its base implementation is empty, so it is not a universal primitive export API.
+- `FStaticMeshSceneProxy::GetMeshDescription` emits batches by LOD section and batch, using `GetMeshElement`; each batch carries its actual `MaterialRenderProxy`. The capture provider must also preserve the source section's material-slot index alongside each batch. Do not infer a material slot from a batch's position in the flattened output for arbitrary proxy types.
 - `FMeshPassProcessor::AddMeshBatch` is the Renderer mesh-pass entry point for turning `FMeshBatch` descriptions into draw commands.
 - `FMaterialRenderProxy::GetMaterialWithFallback` resolves a usable material and an optional fallback proxy. The proxy corresponding to the returned material must be used for subsequent material operations.
 - `FMaterialRenderProxy::UpdateUniformExpressionCacheIfNeeded(FeatureLevel)` is the normal render-thread update path.
@@ -113,7 +113,7 @@ However, a custom `FMeshPassProcessor` alone does not solve chart rasterization.
 
 Do not overwrite source UVs with chart UVs: that changes the material being captured. Do not assume a normal camera-projected Base Pass is a valid atlas capture: screen-space expressions and projection-dependent derivatives would change meaning.
 
-The implementation must prove how the selected vertex factory and material shader path preserve original material inputs while rasterizing into generated chart coordinates. If this requires a dedicated chart vertex stream/factory or a carefully scoped Base Pass extension, document and test that exact path before adding a code diff. The source audit so far confirms the mesh-pass and mesh-description entry points, but does not establish a drop-in UE4.27 chart-capture implementation.
+The initial implementation scope should be static meshes, because the source proxy implements `GetMeshDescription` and exposes section-based batches. Other primitive types require their own explicit mesh-description/material-slot provider; the base virtual function returns no batches by default. The implementation must prove how the selected vertex factory and material shader path preserve original material inputs while rasterizing into generated chart coordinates. If this requires a dedicated chart vertex stream/factory or a carefully scoped Base Pass extension, document and test that exact path before adding a code diff. The source audit so far confirms the mesh-pass and mesh-description entry points, but does not establish a drop-in UE4.27 chart-capture implementation.
 
 ## Cached values and validity
 
