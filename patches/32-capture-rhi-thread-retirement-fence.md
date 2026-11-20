@@ -112,3 +112,55 @@ This closes the main raw-pointer lifetime gap identified in Patch 31 at the desi
 - `Engine/Source/Runtime/Engine/Private/UnrealEngine.cpp`
 - `Engine/Source/Runtime/RenderCore/Private/RenderingThread.cpp`
 - `Engine/Source/Runtime/RHI/Public/RHIResources.h`
+
+
+## 9. Follow-up correction: non-blocking polling and RDG placement
+
+A follow-up audit narrowed the integration point and the non-blocking retirement mechanism.
+
+### 9.1 Do not use WaitOnRHIThreadFence in the normal retirement poll
+
+`FRHICommandListExecutor::WaitOnRHIThreadFence()` is a blocking wait on the Render Thread when the event is not complete. It is suitable for a deliberate synchronization point, not for every capture generation's routine retirement.
+
+UE4.27 already uses non-blocking polling patterns:
+
+- `FShaderPipelineCache::ReadyForPrecompile()` checks `LastPrecompileRHIFence->IsComplete()` and clears the ref only after completion.
+- `FRHILockTracker::FlushCompleteUnlocks()` scans outstanding fence events and removes only completed entries.
+- `FRenderTargetPool::WaitForTransitionFence()` is a separate explicit wait path; it should not be copied as the normal per-generation polling strategy.
+
+Use a render-thread-owned pending-retirement queue. Each entry retains its owner and fence. On subsequent render-thread maintenance, test `Fence->IsComplete()`; leave incomplete entries queued. Retire only completed entries. Do not wait on each entry during the same frame it was submitted.
+
+### 9.2 Correct RDG insertion point
+
+UE4.27's `FRDGBuilder` is constructed with an `FRHICommandListImmediate&`. Graphics RDG passes execute using the builder's graphics command list; the pass lambda receives an immediate command list in the standard AddPass pattern.
+
+However, a raster pass's render-pass epilogue (`EndRenderPass()`) is emitted by `FRDGBuilder::ExecutePass()` **after** the pass lambda returns. A fence inserted inside the raster pass lambda would therefore be too early to cover the pass's final EndRenderPass command.
+
+For a standalone capture graph, the robust placement is:
+
+1. Add the capture draw pass and any resolve/copy passes to the graph.
+2. Call `GraphBuilder.Execute()`.
+3. On the same enclosing render-thread scope, append `RHICmdList.RHIThreadFence()` to the builder's original immediate command list.
+4. Call `RHICmdList.ImmediateFlush(EImmediateFlushType::DispatchToRHIThread)`.
+
+This places the fence after all graph passes, their prologues/epilogues, and the graph's recorded resolve/copy work. If the capture pass is part of a renderer-owned graph, do not add a fence from an individual pass lambda. The renderer integration must append it after the outer graph has executed, or after a specifically ordered final pass plus its epilogue has been recorded.
+
+### 9.3 No separate RHI thread
+
+When `IsRunningRHIInSeparateThread()` is false, `RHIThreadFence()` returns null. This is not an asynchronous completion event.
+
+In this configuration, `ImmediateFlush(DispatchToRHIThread)` calls `ExecuteList()`; `ExecuteInner()` falls through to `ExecuteInner_DoExecute()` on the calling/rendering thread. Thus the immediate command list is consumed synchronously before the flush returns. The retirement queue can treat the null-fence case as already consumed **only after that dispatch flush returns**.
+
+Do not treat a null fence as completed before dispatching the immediate command list.
+
+### 9.4 Revised practical sequence
+
+- At the end of the enclosing graph execution, create the RHI-thread fence.
+- Immediately dispatch the command list.
+- If the fence is non-null, add `{ Owner, Fence }` to the pending-retirement queue and poll it on later render-thread maintenance.
+- If the fence is null, the dispatch flush has synchronously consumed the list; proceed to VF release on the rendering thread.
+- Once the fence is complete, call `ChartVF.ReleaseResource()` directly on the rendering thread (not from the owner destructor), then transfer the now-uninitialized owner to deferred C++ cleanup.
+- Release the owner's strong RHI refs only after the RHI command-consumption condition is met. Standard RHI deferred deletion then handles backend resource destruction according to UE4.27 policy.
+
+This sequence avoids a per-generation blocking wait. It still does not claim GPU completion; it only closes the queued RHI command raw-pointer lifetime.
+
