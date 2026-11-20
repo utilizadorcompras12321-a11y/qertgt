@@ -64,6 +64,7 @@ diff --git a/Engine/Source/Runtime/Engine/Private/StaticMeshRender.cpp b/Engine/
 +		!PositionBuffer.GetVertexData() || !LOD->IndexBuffer.HasCPUData() ||
 +		StaticVertexBuffer.GetNumVertices() != (uint32)NumVertices ||
 +		NumTexCoords == 0 ||
++		(uint64)NumVertices * (uint64)NumTexCoords > (uint64)MAX_int32 ||
 +		!StaticVertexBuffer.GetTangentData() ||
 +		!StaticVertexBuffer.GetTexcoordData())
  	{
