@@ -63,7 +63,7 @@ index 2222222..5555555 100644
  // Copyright Epic Games, Inc. All Rights Reserved.
  
  #include "SoftwareRTCaptureVertexFactory.h"
-+#include "Materials/MaterialShared.h"
++#include "MaterialShared.h"
  
 -/**
 - * No VF-specific bindings are required by the inert registration stub.
