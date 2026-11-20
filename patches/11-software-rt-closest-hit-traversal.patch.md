@@ -316,7 +316,7 @@ new file mode 100644
 4. `LocalGeometricNormal` is not yet a world normal. The correct world normal uses the inverse-transpose of the instance transform's linear 3×3 part, followed by normalization. Negative determinant/mirrored instances also need a deliberate winding convention.
 5. This first version is correctness-oriented: it traverses both children without near-first ordering and inverts each candidate instance matrix. Later optimize by ordering child visits by entry distance and caching inverse transforms in TLAS instances.
 6. It returns geometric hits only. Opacity-mask rejection, per-instance material overrides, WPO, translucency, material Surface Cache lookup, ray differentials, and effect-specific acceptance are not implemented here.
-7. Validate `TArray::Pop(EAllowShrinking::No)` against the exact UE4.27.2 branch; if that overload is absent, use `Pop(false)`. Also validate `FBox::IsValid`, `FMatrix::Determinant/Inverse/TransformPosition/TransformVector`, and the existing TLAS/BLAS node definitions in the target checkout.
+7. The traversal uses `TArray::Pop(false)`, the UE4.27-compatible non-shrinking pop form. Still validate `FBox::IsValid`, `FMatrix::Determinant/Inverse/TransformPosition/TransformVector`, and the existing TLAS/BLAS node definitions in the exact target checkout.
 8. This is not a claim of compilation or working engine integration. Unit-test ray/AABB parallel cases, rays starting inside bounds, edge/vertex triangle hits, non-uniform and negative scale, singular transforms, overlapping instances, and nearest-hit ordering before exposing it to renderer effects.
 
 ## Dependencies
