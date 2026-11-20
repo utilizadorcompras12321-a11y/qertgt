@@ -44,7 +44,7 @@ Accessors in the same template include:
 
 This is the correct boundary for material-only capture: call the generated material-input evaluation and read its outputs before any Base Pass light accumulation, fog, pre-exposure or scene-color composition.
 
-Important distinction: `CalcMaterialParametersEx()` initializes world/screen/camera/facing parameters and calls `CalcPixelMaterialInputs()` internally. A capture shader should follow the established call sequence for its chosen position path and must not accidentally evaluate the generated graph twice. The capture entry point should call the appropriate `CalcMaterialParameters()` or `CalcMaterialParametersEx()` path once; it should not manually call both without a specific reason.
+Important distinction: `CalcMaterialParametersEx()` initializes world/screen/camera/facing parameters and calls `CalcPixelMaterialInputs()` internally. The Runtime Virtual Texture shader source currently contains an explicit `CalcPixelMaterialInputs()` call followed by `CalcMaterialParametersEx()`, which itself calls `CalcPixelMaterialInputs()`. That appears to evaluate the generated material inputs twice. Treat this as a source pattern for shader registration/output, **not** as a call sequence to copy. The Software RT capture entry point should call `CalcMaterialParameters()` or `CalcMaterialParametersEx()` once for its chosen position path, unless a deliberate and measured reason requires separate evaluation.
 
 ## 2. Native UE4.27 precedent: Runtime Virtual Texture material shader
 
