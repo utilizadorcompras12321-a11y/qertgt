@@ -1,0 +1,97 @@
+diff --git a/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h b/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h
+--- a/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h
++++ b/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h
+@@
+ class FScene : public FSceneInterface
+ {
+ public:
++
++	/**
++	 * Render-thread snapshot consumed by the shared Software RT scene builder.
++	 * Proxy pointers are valid only while their primitive remains in FScene.
++	 * The snapshot is rebuilt after UpdateAllPrimitiveSceneInfos has completed
++	 * all packed-array changes and deferred primitive removals.
++	 */
++	struct FSoftwareRTPrimitiveInstance
++	{
++		FPrimitiveSceneProxy* Proxy;
++		FPrimitiveComponentId ComponentId;
++		FMatrix LocalToWorld;
++		FBoxSphereBounds WorldBounds;
++	};
+@@
+ 	/** Packed array of primitive scene proxies in the scene. */
+ 	TArray<FPrimitiveSceneProxy*> PrimitiveSceneProxies;
++	/** Stable-at-sync-point view of the current primitives for Software RT consumers. */
++	TArray<FSoftwareRTPrimitiveInstance> SoftwareRTPrimitiveInstances;
++	/** Set by render-thread scene mutations; cleared after the Software RT snapshot is rebuilt. */
++	bool bSoftwareRTSceneDirty = false;
+ 	/** Packed array of primitive bounds. */
+ 	TArray<FPrimitiveBounds> PrimitiveBounds;
+diff --git a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp b/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
+--- a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
++++ b/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
+@@
+ void FScene::AddPrimitiveSceneInfo_RenderThread(FPrimitiveSceneInfo* PrimitiveSceneInfo, const TOptional<FTransform>& PreviousTransform)
+ {
+ 	check(IsInRenderingThread());
+ 	check(PrimitiveSceneInfo->PackedIndex == INDEX_NONE);
+ 	check(!AddedPrimitiveSceneInfos.Contains(PrimitiveSceneInfo));
+ 	AddedPrimitiveSceneInfos.Add(PrimitiveSceneInfo);
++	bSoftwareRTSceneDirty = true;
+ 	if (PreviousTransform.IsSet())
+@@
+ void FScene::UpdatePrimitiveTransform_RenderThread(FPrimitiveSceneProxy* PrimitiveSceneProxy, const FBoxSphereBounds& WorldBounds, const FBoxSphereBounds& LocalBounds, const FMatrix& LocalToWorld, const FVector& AttachmentRootPosition, const TOptional<FTransform>& PreviousTransform)
+ {
+ 	check(IsInRenderingThread());
+@@
+ 	check(!RemovedPrimitiveSceneInfos.Contains(PrimitiveSceneProxy->GetPrimitiveSceneInfo()));
+ 	UpdatedTransforms.Add(PrimitiveSceneProxy, { WorldBounds, LocalBounds, LocalToWorld, AttachmentRootPosition });
++	bSoftwareRTSceneDirty = true;
+@@
+ void FScene::RemovePrimitiveSceneInfo_RenderThread(FPrimitiveSceneInfo* PrimitiveSceneInfo)
+ {
+ 	check(IsInRenderingThread());
++	bSoftwareRTSceneDirty = true;
+ 
+ 	if (AddedPrimitiveSceneInfos.Remove(PrimitiveSceneInfo))
+@@
+ void FScene::ApplyWorldOffset_RenderThread(const FVector& InOffset)
+ {
+ 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SceneApplyWorldOffset);
+ 	SCOPED_NAMED_EVENT(FScene_ApplyWorldOffset_RenderThread, FColor::Yellow);
+ 	
+ 	GPUScene.bUpdateAllPrimitives = true;
++	bSoftwareRTSceneDirty = true;
+@@
+ 	{
+ 		SCOPED_NAMED_EVENT(FScene_DeletePrimitiveSceneInfo, FColor::Red);
+ 		for (FPrimitiveSceneInfo* PrimitiveSceneInfo : DeletedSceneInfos)
+@@
+ 		}
+ 	}
++
++	// Synchronize Software RT only after additions, removals, transform updates,
++	// packed-array swaps, and deferred scene-info deletion have all completed.
++	// This gives downstream BLAS/TLAS and material-cache builders one coherent
++	// render-thread view and prevents them from retaining removed proxy pointers.
++	if (bSoftwareRTSceneDirty)
++	{
++		check(Primitives.Num() == PrimitiveSceneProxies.Num());
++		check(Primitives.Num() == PrimitiveTransforms.Num());
++		check(Primitives.Num() == PrimitiveBounds.Num());
++		check(Primitives.Num() == PrimitiveComponentIds.Num());
++
++		SoftwareRTPrimitiveInstances.Reset(Primitives.Num());
++		for (int32 PrimitiveIndex = 0; PrimitiveIndex < Primitives.Num(); ++PrimitiveIndex)
++		{
++			FSoftwareRTPrimitiveInstance& Instance = SoftwareRTPrimitiveInstances.AddDefaulted_GetRef();
++			Instance.Proxy = PrimitiveSceneProxies[PrimitiveIndex];
++			Instance.ComponentId = PrimitiveComponentIds[PrimitiveIndex];
++			Instance.LocalToWorld = PrimitiveTransforms[PrimitiveIndex];
++			Instance.WorldBounds = PrimitiveBounds[PrimitiveIndex].BoxSphereBounds;
++		}
++		bSoftwareRTSceneDirty = false;
++	}
+ 
+ 	UpdatedAttachmentRoots.Reset();
