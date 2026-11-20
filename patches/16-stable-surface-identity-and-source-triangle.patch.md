@@ -167,11 +167,36 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.h b
 +}
 ```
 
-## Required follow-up correction to the traversal helper
+## Traversal helper signature change
 
-Patch 11's internal `TraceBLASClosest` signature must gain a `uint32& OutSourceTriangleIndex` output parameter, initialized to `MAX_uint32`. The diff above shows the call-site and assignment; add the parameter beside `OutTriangleIndex` and assign it from the selected `FSoftwareRTTriangle`.
+The corresponding Patch 11 helper declaration/definition change is:
 
-The hit's `TriangleIndex` remains the BLAS array index because Patch 14 needs it to access the reordered BLAS triangle and its vertex indices. Do not replace it with `SourceTriangleIndex`.
+```diff
+@@
+ static bool TraceBLASClosest(
+ 	const FSoftwareRTRay& LocalRay,
+ 	const FSoftwareRTBLAS& BLAS,
+ 	float& InOutClosestT,
+ 	uint32& OutTriangleIndex,
++	uint32& OutSourceTriangleIndex,
+ 	int32& OutMaterialIndex,
+@@
+ 					bFound = true;
+ 					InOutClosestT = HitT;
+ 					OutTriangleIndex = I;
++					OutSourceTriangleIndex = BLAS.Triangles[(int32)I].SourceTriangleIndex;
+@@
+ 				uint32 TriangleIndex = MAX_uint32;
++				uint32 SourceTriangleIndex = MAX_uint32;
+@@
+-				if (TraceBLASClosest(LocalRay, *BLAS, ClosestT, TriangleIndex, MaterialIndex, Barycentrics, LocalNormal))
++				if (TraceBLASClosest(LocalRay, *BLAS, ClosestT, TriangleIndex, SourceTriangleIndex, MaterialIndex, Barycentrics, LocalNormal))
+@@
+ 					OutHit.TriangleIndex = TriangleIndex;
++					OutHit.SourceTriangleIndex = SourceTriangleIndex;
+```
+
+Initialize the output to `MAX_uint32` at the call site, as shown. The hit's `TriangleIndex` remains the BLAS array index because Patch 14 needs it to access the reordered BLAS triangle and its vertex indices. Do not replace it with `SourceTriangleIndex`.
 
 ## Identity and invalidation rules
 
