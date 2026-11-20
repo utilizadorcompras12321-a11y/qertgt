@@ -39,7 +39,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.h b
 +	// Stable component identity; ScenePrimitiveIndex remains snapshot-local.
 +	FPrimitiveComponentId ComponentId;
  	FMatrix LocalToWorld = FMatrix::Identity;
- diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.cpp
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.cpp
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.cpp
 @@
@@ -47,7 +47,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.h b
  			T.Index0 = A; T.Index1 = C; T.Index2 = D;
 +			T.SourceTriangleIndex = (uint32)(I / 3ull);
  			T.MaterialIndex = S.MaterialIndex;
- diff --git a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp b/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
+diff --git a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp b/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
 --- a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
 @@
@@ -55,7 +55,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.h b
  				TLASInstance.BLASKey = PrimitiveInstance.BLASKey;
 +				TLASInstance.ComponentId = PrimitiveInstance.ComponentId;
  				TLASInstance.LocalToWorld = PrimitiveInstance.LocalToWorld;
- diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTRayTracer.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTRayTracer.h
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTRayTracer.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTRayTracer.h
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTRayTracer.h
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTRayTracer.h
 @@
@@ -112,7 +112,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.h b
 +		const FSoftwareRTHitSurfaceData& Surface,
 +		FSoftwareRTSurfaceKey& OutKey);
  };
- diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTRayTracer.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTRayTracer.cpp
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTRayTracer.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTRayTracer.cpp
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTRayTracer.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTRayTracer.cpp
 @@
