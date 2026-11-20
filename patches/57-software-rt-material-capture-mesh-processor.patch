@@ -1,0 +1,220 @@
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+index 9999999..aaaaaaa 100644
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+@@ -1,9 +1,12 @@
+ // Copyright Epic Games, Inc. All Rights Reserved.
+ 
+ #include "MaterialShared.h"
+ #include "MaterialShader.h"
+ #include "MeshMaterialShader.h"
++#include "MeshPassProcessor.h"
++#include "MeshPassProcessor.inl"
+ #include "SoftwareRTCaptureVertexFactory.h"
++#include "SoftwareRTMaterialCapture.h"
+ 
+ namespace SoftwareRTMaterialCapture
+ {
+@@ -85,7 +89,147 @@
+ 	IMPLEMENT_MATERIAL_SHADER_TYPE(
+ 		,
+ 		FSoftwareRTMaterialCapturePS,
+ 		TEXT("/Engine/Private/SoftwareRTMaterialCapture.usf"),
+ 		TEXT("MainPS"),
+ 		SF_Pixel);
++
++	/**
++	 * Deliberately narrow first draw path:
++	 * - one caller-owned capture FMeshBatch;
++	 * - chart-expanded vertices already contain translated-world positions;
++	 * - identity primitive uniform buffer and PrimID_ForceZero.
++	 *
++	 * The VF does not advertise a primitive-ID stream, so UE4.27 binds the
++	 * element's primitive uniform buffer even when GPU Scene is enabled.
++	 * This is a shader/draw smoke path, not the production scene-capture processor.
++	 */
++	class FSoftwareRTMaterialCaptureMeshProcessor final : public FMeshPassProcessor
++	{
++	public:
++		FSoftwareRTMaterialCaptureMeshProcessor(
++			const FSceneView& InView,
++			FMeshPassDrawListContext* InDrawListContext)
++			: FMeshPassProcessor(nullptr, InView.GetFeatureLevel(), &InView, InDrawListContext)
++			, DrawRenderState(InView)
++		{
++			DrawRenderState.SetBlendState(TStaticBlendState<>::GetRHI());
++			DrawRenderState.SetDepthStencilState(TStaticDepthStencilState<false, CF_Always>::GetRHI());
++		}
++
++		virtual void AddMeshBatch(
++			const FMeshBatch& RESTRICT MeshBatch,
++			uint64 BatchElementMask,
++			const FPrimitiveSceneProxy* RESTRICT PrimitiveSceneProxy,
++			int32 StaticMeshId = -1) override final
++		{
++			if (PrimitiveSceneProxy != nullptr
++				|| MeshBatch.VertexFactory == nullptr
++				|| MeshBatch.VertexFactory->GetType() != &FSoftwareRTCaptureVertexFactory::StaticType
++				|| MeshBatch.MaterialRenderProxy == nullptr
++				|| MeshBatch.Elements.Num() == 0
++				|| MeshBatch.Elements.Num() > 64
++				|| MeshBatch.Type != PT_TriangleList)
++			{
++				return;
++			}
++
++			for (int32 ElementIndex = 0; ElementIndex < MeshBatch.Elements.Num(); ++ElementIndex)
++			{
++				if ((BatchElementMask & (1ull << ElementIndex)) == 0)
++				{
++					continue;
++				}
++
++				const FMeshBatchElement& Element = MeshBatch.Elements[ElementIndex];
++				if (Element.PrimitiveIdMode != PrimID_ForceZero
++					|| Element.PrimitiveUniformBufferResource == nullptr)
++				{
++					return;
++				}
++			}
++
++			const FMaterialRenderProxy* FallbackMaterialRenderProxy = nullptr;
++			const FMaterial& Material = MeshBatch.MaterialRenderProxy->GetMaterialWithFallback(
++				FeatureLevel,
++				FallbackMaterialRenderProxy);
++
++			// Do not capture a fallback material: it has no guarantee of carrying
++			// the opt-in capture permutations.
++			if (FallbackMaterialRenderProxy != nullptr || !Material.IsUsedWithSoftwareRTCapture())
++			{
++				return;
++			}
++
++			FVertexFactoryType* VertexFactoryType = MeshBatch.VertexFactory->GetType();
++			TMeshProcessorShaders<
++				FSoftwareRTMaterialCaptureVS,
++				FBaseHS,
++				FBaseDS,
++				FSoftwareRTMaterialCapturePS> Shaders;
++
++			// Missing permutations are a normal skip condition for uncooked or
++			// not-yet-rebuilt materials. Never use GetShader's fatal default here.
++			Shaders.VertexShader = Material.GetShader<FSoftwareRTMaterialCaptureVS>(
++				VertexFactoryType, 0, false);
++			Shaders.PixelShader = Material.GetShader<FSoftwareRTMaterialCapturePS>(
++				VertexFactoryType, 0, false);
++
++			if (!Shaders.VertexShader.IsValid() || !Shaders.PixelShader.IsValid())
++			{
++				return;
++			}
++
++			const FMeshDrawingPolicyOverrideSettings OverrideSettings = ComputeMeshOverrideSettings(MeshBatch);
++			const ERasterizerFillMode MeshFillMode = ComputeMeshFillMode(MeshBatch, Material, OverrideSettings);
++			const ERasterizerCullMode MeshCullMode = ComputeMeshCullMode(MeshBatch, Material, OverrideSettings);
++
++			FMeshMaterialShaderElementData ShaderElementData;
++			ShaderElementData.InitializeMeshMaterialData(
++				ViewIfDynamicMeshCommand,
++				nullptr,
++				MeshBatch,
++				StaticMeshId,
++				false);
++
++			const FMeshDrawCommandSortKey SortKey = {};
++			BuildMeshDrawCommands(
++				MeshBatch,
++				BatchElementMask,
++				nullptr,
++				*MeshBatch.MaterialRenderProxy,
++				Material,
++				DrawRenderState,
++				Shaders,
++				MeshFillMode,
++				MeshCullMode,
++				SortKey,
++				EMeshPassFeatures::Default,
++				ShaderElementData);
++		}
++
++	private:
++		FMeshPassProcessorRenderState DrawRenderState;
++	};
++
++	void DrawSoftwareRTMaterialCaptureMesh(
++		const FSceneView& View,
++		FRHICommandList& RHICmdList,
++		const FMeshBatch& MeshBatch)
++	{
++		check(IsInRenderingThread());
++
++		// The caller must have an active render pass with the three PF_FloatRGBA
++		// capture targets bound, plus the chart viewport/scissor already set.
++		// This dynamic helper allocates per call and is intended only for the
++		// initial proof; production capture must build persistent RDG pass work.
++		DrawDynamicMeshPass(
++			View,
++			RHICmdList,
++			[&MeshBatch, &View](FMeshPassDrawListContext* DrawListContext)
++			{
++				FSoftwareRTMaterialCaptureMeshProcessor Processor(View, DrawListContext);
++				Processor.AddMeshBatch(MeshBatch, ~uint64(0), nullptr, -1);
++			},
++			true);
++	}
+ }
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+new file mode 100644
+index 0000000..aaaaaaa 100644
+--- /dev/null
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+@@ -0,0 +1,25 @@
++// Copyright Epic Games, Inc. All Rights Reserved.
++
++#pragma once
++
++#include "MeshPassProcessor.h"
++
++namespace SoftwareRTMaterialCapture
++{
++	/**
++	 * Draws one caller-built chart capture batch.
++	 *
++	 * The caller owns and retains the mesh batch, capture VF, vertex/index
++	 * buffers, material proxy, and primitive uniform buffer through command
++	 * submission and RHI retirement. Every selected element must use
++	 * GIdentityPrimitiveUniformBuffer and PrimID_ForceZero.
++	 *
++	 * Call only inside a render pass with three PF_FloatRGBA targets bound and
++	 * the chart viewport/scissor configured. This is a smoke-test helper, not
++	 * the production RDG integration.
++	 */
++	RENDERER_API void DrawSoftwareRTMaterialCaptureMesh(
++		const FSceneView& View,
++		FRHICommandList& RHICmdList,
++		const FMeshBatch& MeshBatch);
++}
+diff --git a/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf b/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf
+index 9999999..aaaaaaa 100644
+--- a/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf
++++ b/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf
+@@ -31,6 +31,4 @@
+ 		Input,
+ 		VFIntermediates,
+ 		VertexParameters);
+-
+-	return Output;
+ }
+diff --git a/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush b/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
+index 9999999..aaaaaaa 100644
+--- a/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
++++ b/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
+@@ -42,3 +42,3 @@
+ 	TANGENTTOWORLD_INTERPOLATOR_BLOCK
+-\tfloat3 TranslatedWorldPosition : TEXCOORD12;
++	float3 TranslatedWorldPosition : TEXCOORD12;
+  };
+@@ -166,2 +166,2 @@
+-\tInterpolants.TranslatedWorldPosition = VertexParameters.WorldPosition;
++	Interpolants.TranslatedWorldPosition = VertexParameters.WorldPosition;
+ 	Interpolants.TangentToWorld0 = float4(Intermediates.TangentToWorld[0], 0);
