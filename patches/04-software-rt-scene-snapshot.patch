@@ -4,23 +4,22 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h b/Engine/Sour
 @@ -2445,1 +2445,14 @@
  public:
 +	/**
-+	 * Render-thread snapshot consumed by the shared Software RT scene builder.
++	 * Render-thread snapshot consumed by Software RT scene builders.
 +	 * Proxy pointers are valid only while their primitive remains in FScene.
-+	 * The snapshot is rebuilt after UpdateAllPrimitiveSceneInfos has completed
-+	 * all packed-array changes and deferred primitive removals.
++	 * Rebuilt after packed-array changes and deferred primitive deletion.
 +	 */
 +	struct FSoftwareRTPrimitiveInstance
 +	{
-+		FPrimitiveSceneProxy* Proxy;
++		FPrimitiveSceneProxy* Proxy = nullptr;
 +		FPrimitiveComponentId ComponentId;
-+		FMatrix LocalToWorld;
++		FMatrix LocalToWorld = FMatrix::Identity;
 +		FBoxSphereBounds WorldBounds;
 +	};
 @@ -2477,1 +2477,5 @@
  	TArray<FPrimitiveSceneProxy*> PrimitiveSceneProxies;
-+	/** Stable-at-sync-point view of the current primitives for Software RT consumers. */
++	/** Coherent render-thread view of currently registered primitives. */
 +	TArray<FSoftwareRTPrimitiveInstance> SoftwareRTPrimitiveInstances;
-+	/** Set by render-thread scene mutations; cleared after the Software RT snapshot is rebuilt. */
++	/** Set by scene mutations; cleared only after rebuilding the snapshot. */
 +	bool bSoftwareRTSceneDirty = false;
 diff --git a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp b/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
 --- a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
@@ -31,18 +30,16 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp b/Engine/S
 @@ -1312,1 +1312,2 @@
  	UpdatedTransforms.Add(PrimitiveSceneProxy, { WorldBounds, LocalBounds, LocalToWorld, AttachmentRootPosition });
 +	bSoftwareRTSceneDirty = true;
-@@ -1516,1 +1516,2 @@
+@@ -1516,1 +1517,2 @@
  	check(IsInRenderingThread());
 +	bSoftwareRTSceneDirty = true;
-@@ -3537,1 +3537,2 @@
+@@ -3537,1 +3538,2 @@
  	GPUScene.bUpdateAllPrimitives = true;
 +	bSoftwareRTSceneDirty = true;
-@@ -4311,1 +4311,23 @@
+@@ -4311,1 +4312,23 @@
  	UpdatedAttachmentRoots.Reset();
-+	// Synchronize Software RT only after additions, removals, transform updates,
-+	// packed-array swaps, and deferred scene-info deletion have all completed.
-+	// This gives downstream BLAS/TLAS and material-cache builders one coherent
-+	// render-thread view and prevents them from retaining removed proxy pointers.
++	// Add/remove/transform operations and packed-array swaps are complete here.
++	// Never expose a partially updated scene or retain pointers to deleted proxies.
 +	if (bSoftwareRTSceneDirty)
 +	{
 +		check(Primitives.Num() == PrimitiveSceneProxies.Num());
@@ -61,3 +58,14 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp b/Engine/S
 +		}
 +		bSoftwareRTSceneDirty = false;
 +	}
+diff --git a/Engine/Source/Runtime/Renderer/Private/PrimitiveSceneInfo.cpp b/Engine/Source/Runtime/Renderer/Private/PrimitiveSceneInfo.cpp
+--- a/Engine/Source/Runtime/Renderer/Private/PrimitiveSceneInfo.cpp
++++ b/Engine/Source/Runtime/Renderer/Private/PrimitiveSceneInfo.cpp
+@@
+ void FPrimitiveSceneInfo::UpdateStaticMeshes(FRHICommandListImmediate& RHICmdList, FScene* Scene, const TArrayView<FPrimitiveSceneInfo*>& SceneInfos, bool bReAddToDrawLists)
+ {
+ 	QUICK_SCOPE_CYCLE_COUNTER(STAT_FPrimitiveSceneInfo_UpdateStaticMeshes);
++	// Mesh resources/elements may have changed. Refresh the snapshot and BLAS
++	// cache on the next scene synchronization.
++	Scene->bSoftwareRTSceneDirty = true;
++	Scene->bSoftwareRTBLASCacheNeedsFullRebuild = true;
