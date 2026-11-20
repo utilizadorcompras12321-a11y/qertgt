@@ -1,7 +1,7 @@
 diff --git a/Engine/Source/Runtime/Engine/Classes/Materials/Material.h b/Engine/Source/Runtime/Engine/Classes/Materials/Material.h
 --- a/Engine/Source/Runtime/Engine/Classes/Materials/Material.h
 +++ b/Engine/Source/Runtime/Engine/Classes/Materials/Material.h
-@@ -649,8 +649,14 @@
+@@ -649,6 +649,13 @@
  	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Usage)
  	uint8 bUsedWithGeometryCache : 1;
  
