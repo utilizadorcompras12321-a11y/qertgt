@@ -1,122 +1,112 @@
-# 09 — Shared BLAS cache in the FScene primitive snapshot
+# 09 — Shared BLAS cache with revision-aware identity
 
 Status: proposed integration diff; not applied to a full UE4.27.2 checkout or compiled.
 
 ## Behavior
 
-- Extends each Software RT primitive snapshot entry with a BLAS cache key.
-- Uses the borrowed `FStaticMeshLODResources*` returned by the provider as the shared geometry identity.
-- Builds a BLAS only when that LOD key is absent from the cache.
-- Multiple conventional static-mesh instances using the same LOD resource reuse the same BLAS.
-- Transform-only scene changes update snapshot transforms but leave cached local-space BLAS data intact.
-- Removes cached BLAS entries once no current primitive references their LOD resource.
-- Unsupported proxies and failed geometry exports receive a null BLAS key; they are not silently treated as supported.
+- Shares local-space BLAS data between ordinary static-mesh instances using the same geometry revision.
+- Uses FSoftwareRTGeometryKey, not a bare LOD-resource pointer.
+- The key includes LOD identity, position/index CPU-storage addresses, vertex/index counts and a section signature.
+- A static-mesh update explicitly invalidates the complete BLAS cache. This prevents stale BLAS data when a resource is rebuilt in place and retains the same descriptor address.
+- Failed geometry exports do not create cache entries and are retried on the next scene synchronization.
+- Removed resources are pruned after the current primitive set is scanned.
 
 ## Diff
 
-```diff
+\`\`\`diff
 diff --git a/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h b/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h
 --- a/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h
 +++ b/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h
 @@
 +#include "SoftwareRT/SoftwareRTBVH.h"
 @@
- 	struct FSoftwareRTPrimitiveInstance
- 	{
- 		FPrimitiveSceneProxy* Proxy;
- 		FPrimitiveComponentId ComponentId;
- 		FMatrix LocalToWorld;
- 		FBoxSphereBounds WorldBounds;
-+		/** Key into SoftwareRTBLASCache; null when this proxy is unsupported. */
-+		const void* BLASKey;
- 	};
+ \tstruct FSoftwareRTPrimitiveInstance
+ \t{
 @@
- 	TArray<FSoftwareRTPrimitiveInstance> SoftwareRTPrimitiveInstances;
-+	/** Shared local-space BLAS cache keyed by the source LOD resource identity. */
-+	TMap<const void*, FSoftwareRTBLAS> SoftwareRTBLASCache;
- 	/** Set by render-thread scene mutations; cleared after the Software RT snapshot is rebuilt. */
- 	bool bSoftwareRTSceneDirty = false;
+ \t\tFBoxSphereBounds WorldBounds;
++\t\tFSoftwareRTGeometryKey BLASKey;
++\t\tbool bHasBLAS = false;
+ \t};
+@@
+-\tTMap<const void*, FSoftwareRTBLAS> SoftwareRTBLASCache;
++\tTMap<FSoftwareRTGeometryKey, FSoftwareRTBLAS> SoftwareRTBLASCache;
++\t/** Set when static-mesh resources/elements are rebuilt, even if their addresses are reused. */
++\tbool bSoftwareRTBLASCacheNeedsFullRebuild = false;
 diff --git a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp b/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
 --- a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
 @@
- 	if (bSoftwareRTSceneDirty)
- 	{
- 		check(Primitives.Num() == PrimitiveSceneProxies.Num());
- 		check(Primitives.Num() == PrimitiveTransforms.Num());
- 		check(Primitives.Num() == PrimitiveBounds.Num());
- 		check(Primitives.Num() == PrimitiveComponentIds.Num());
+ \tif (bSoftwareRTSceneDirty)
+ \t{
++\t\tif (bSoftwareRTBLASCacheNeedsFullRebuild)
++\t\t{
++\t\t\tSoftwareRTBLASCache.Reset();
++\t\t\tbSoftwareRTBLASCacheNeedsFullRebuild = false;
++\t\t}
++
+ \t\tcheck(Primitives.Num() == PrimitiveSceneProxies.Num());
+@@
+-\t\tTSet<const void*> ActiveSoftwareRTBLASKeys;
++\t\tTSet<FSoftwareRTGeometryKey> ActiveSoftwareRTBLASKeys;
+ \t\tSoftwareRTPrimitiveInstances.Reset(Primitives.Num());
+ \t\tfor (int32 PrimitiveIndex = 0; PrimitiveIndex < Primitives.Num(); ++PrimitiveIndex)
+ \t\t{
+ \t\t\tFPrimitiveSceneProxy* Proxy = PrimitiveSceneProxies[PrimitiveIndex];
+-\t\t\tconst void* BLASKey = nullptr;
+-\t\t\tconst FStaticMeshLODResources* LODResources = nullptr;
++\t\t\tFSoftwareRTGeometryKey BLASKey;
  
-+		TSet<const void*> ActiveSoftwareRTBLASKeys;
- 		SoftwareRTPrimitiveInstances.Reset(Primitives.Num());
- 		for (int32 PrimitiveIndex = 0; PrimitiveIndex < Primitives.Num(); ++PrimitiveIndex)
- 		{
-+			FPrimitiveSceneProxy* Proxy = PrimitiveSceneProxies[PrimitiveIndex];
-+			const void* BLASKey = nullptr;
-+			const FStaticMeshLODResources* LODResources = nullptr;
-+
-+			// The LOD-resource address identifies shared geometry across ordinary
-+			// static-mesh instances. Transform changes do not invalidate this key.
-+			if (Proxy && Proxy->GetSoftwareRTStaticMeshLOD(0, LODResources) && LODResources)
-+			{
-+				BLASKey = LODResources;
-+				ActiveSoftwareRTBLASKeys.Add(BLASKey);
-+
-+				if (!SoftwareRTBLASCache.Contains(BLASKey))
-+				{
-+					FSoftwareRTStaticMeshGeometry Geometry;
-+					FSoftwareRTBLAS NewBLAS;
-+					if (Proxy->GetSoftwareRTStaticMeshGeometry(0, Geometry) &&
-+						FSoftwareRTBVHBuilder::BuildStaticMeshBLAS(Geometry, NewBLAS))
-+					{
-+						SoftwareRTBLASCache.Add(BLASKey, MoveTemp(NewBLAS));
-+					}
-+					else
-+					{
-+						// No cache entry is retained for a failed export/build. The
-+						// next scene sync may retry after streaming/resource changes.
-+						BLASKey = nullptr;
-+					}
-+				}
-+			}
-+			else
-+			{
-+				BLASKey = nullptr;
-+			}
-+
- 			FSoftwareRTPrimitiveInstance& Instance = SoftwareRTPrimitiveInstances.AddDefaulted_GetRef();
--			Instance.Proxy = PrimitiveSceneProxies[PrimitiveIndex];
-+			Instance.Proxy = Proxy;
- 			Instance.ComponentId = PrimitiveComponentIds[PrimitiveIndex];
- 			Instance.LocalToWorld = PrimitiveTransforms[PrimitiveIndex];
- 			Instance.WorldBounds = PrimitiveBounds[PrimitiveIndex].BoxSphereBounds;
-+			Instance.BLASKey = BLASKey;
- 		}
-+
-+		// Release BLAS data once no current scene primitive references its source
-+		// LOD. This also prevents removed meshes from accumulating indefinitely.
-+		for (auto It = SoftwareRTBLASCache.CreateIterator(); It; ++It)
-+		{
-+			if (!ActiveSoftwareRTBLASKeys.Contains(It.Key()))
-+			{
-+				It.RemoveCurrent();
-+			}
-+		}
- 		bSoftwareRTSceneDirty = false;
- 	}
+-\t\t\tif (Proxy && Proxy->GetSoftwareRTStaticMeshLOD(0, LODResources) && LODResources)
++\t\t\tif (Proxy && Proxy->GetSoftwareRTGeometryKey(0, BLASKey) && BLASKey.IsValid())
+ \t\t\t{
+-\t\t\t\tBLASKey = LODResources;
+ \t\t\t\tActiveSoftwareRTBLASKeys.Add(BLASKey);
+ 
+ \t\t\t\tif (!SoftwareRTBLASCache.Contains(BLASKey))
+@@
+ \t\t\t\t\tif (Proxy->GetSoftwareRTStaticMeshGeometry(0, Geometry) &&
+ \t\t\t\t\t\tFSoftwareRTBVHBuilder::BuildStaticMeshBLAS(Geometry, NewBLAS))
+ \t\t\t\t\t{
+ \t\t\t\t\t\tSoftwareRTBLASCache.Add(BLASKey, MoveTemp(NewBLAS));
+ \t\t\t\t\t}
+ \t\t\t\t\telse
+ \t\t\t\t\t{
+-\t\t\t\t\t\tBLASKey = nullptr;
++\t\t\t\t\t\tBLASKey = FSoftwareRTGeometryKey();
+ \t\t\t\t\t}
+ \t\t\t\t}
+ \t\t\t}
+ \t\t\telse
+ \t\t\t{
+-\t\t\t\tBLASKey = nullptr;
++\t\t\t\tBLASKey = FSoftwareRTGeometryKey();
+ \t\t\t}
+@@
+-\t\t\tInstance.BLASKey = BLASKey;
++\t\t\tInstance.BLASKey = BLASKey;
++\t\t\tInstance.bHasBLAS = BLASKey.IsValid() && SoftwareRTBLASCache.Contains(BLASKey);
+@@
+ \t\tfor (auto It = SoftwareRTBLASCache.CreateIterator(); It; ++It)
+@@
+ \t\t\t\tIt.RemoveCurrent();
+ \t\t\t}
+ \t\t}
+diff --git a/Engine/Source/Runtime/Renderer/Private/PrimitiveSceneInfo.cpp b/Engine/Source/Runtime/Renderer/Private/PrimitiveSceneInfo.cpp
+--- a/Engine/Source/Runtime/Renderer/Private/PrimitiveSceneInfo.cpp
++++ b/Engine/Source/Runtime/Renderer/Private/PrimitiveSceneInfo.cpp
+@@
+ void FPrimitiveSceneInfo::UpdateStaticMeshes(FRHICommandListImmediate& RHICmdList, FScene* Scene, const TArrayView<FPrimitiveSceneInfo*>& SceneInfos, bool bReAddToDrawLists)
+ {
+ \tQUICK_SCOPE_CYCLE_COUNTER(STAT_FPrimitiveSceneInfo_UpdateStaticMeshes);
++\tScene->bSoftwareRTSceneDirty = true;
++\tScene->bSoftwareRTBLASCacheNeedsFullRebuild = true;
+\`\`\`
 
-```
+## Important details
 
-## Important caveats / required corrections before applying
-
-1. **LOD selection:** this first integration explicitly requests LOD 0. It must be changed to the same LOD selection policy used by rendering (including per-view LOD and streaming) before claiming render-exact geometry. For the first controlled test, LOD 0 is deliberate and predictable.
-2. **Cache identity:** the raw LOD-resource address is a practical shared key for the first static-mesh provider, but a robust production key needs a resource-generation/revision token to guard against in-place resource rebuilds or address reuse.
-3. **Scene update cost:** the current snapshot rebuild happens only when the existing dirty flag is set. It scans primitives, but only builds missing BLAS entries. A moving primitive therefore does not rebuild its BLAS.
-4. **Failed export retry:** a failed export is retried on the next dirty scene sync. Add explicit failure counters/diagnostics before production.
-5. **Build scheduling:** BLAS construction currently runs synchronously in the render-thread scene sync. This is suitable only as an initial integration test; production should budget or asynchronously build large BLASes and publish completed results safely.
-6. **Include placement:** add `#include "SoftwareRT/SoftwareRTBVH.h"` with the private Renderer includes. This header depends on the canonical geometry types from the prior Engine proxy patch.
-7. **Patch 04 typo:** its proposed declaration `bool bSoftwareRTSceneDirty = false` must end with a semicolon before applying.
-
-## Dependencies
-
-Requires patches 04, 06, 07 and 08. The scene snapshot patch (04) must be corrected for the missing semicolon. This patch does not create a TLAS, perform ray traversal, or update material data.
+- Full cache invalidation on static-mesh update is deliberately conservative. It may rebuild unrelated BLASes after a mesh update, but avoids stale geometry from in-place resource rebuilds.
+- Transform-only updates do not invalidate the BLAS cache; they rebuild only the TLAS.
+- This still uses LOD 0 for the initial controlled test. It is not render-exact for views selecting other LODs.
+- Geometry-key pointer fields are never dereferenced by the cache. They are identity tokens only.
+- The cache is currently built synchronously during scene synchronization. This is correctness-first prototype behavior, not production scheduling.
+- This patch requires 04, 06, 07 and 08. It is not compile-tested.
