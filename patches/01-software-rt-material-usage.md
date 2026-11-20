@@ -46,8 +46,7 @@ diff --git a/Engine/Source/Runtime/Engine/Public/MaterialShared.h b/Engine/Sourc
  	virtual bool IsUsedWithVirtualHeightfieldMesh() const { return false; }
 +	virtual bool IsUsedWithSoftwareRayTracing() const { return false; }
  	ENGINE_API virtual enum EMaterialTessellationMode GetTessellationMode() const;
-@@ -2548,7 +2549,8 @@
- 	ENGINE_API virtual bool IsUsedWithLidarPointCloud() const override;
+@@ -2549,2 +2549,3 @@
  	ENGINE_API virtual bool IsUsedWithVirtualHeightfieldMesh() const override;
 +	ENGINE_API virtual bool IsUsedWithSoftwareRayTracing() const override;
  	ENGINE_API virtual enum EMaterialTessellationMode GetTessellationMode() const override;
