@@ -35,7 +35,7 @@ index 9999999..aaaaaaa 100644
  			&& FMeshMaterialShader::ShouldCompilePermutation(Parameters);
  	}
  
-@@ -85,7 +90,148 @@
+@@ -85,7 +90,151 @@
  	IMPLEMENT_MATERIAL_SHADER_TYPE(
  		,
  		FSoftwareRTMaterialCapturePS,
@@ -57,9 +57,10 @@ index 9999999..aaaaaaa 100644
 +	{
 +	public:
 +		FSoftwareRTMaterialCaptureMeshProcessor(
++			const FScene* InScene,
 +			const FSceneView& InView,
 +			FMeshPassDrawListContext* InDrawListContext)
-+			: FMeshPassProcessor(nullptr, InView.GetFeatureLevel(), &InView, InDrawListContext)
++			: FMeshPassProcessor(InScene, InView.GetFeatureLevel(), &InView, InDrawListContext)
 +			, DrawRenderState(InView)
 +		{
 +			DrawRenderState.SetBlendState(TStaticBlendState<>::GetRHI());
@@ -163,11 +164,13 @@ index 9999999..aaaaaaa 100644
 +	};
 +
 +	void DrawSoftwareRTMaterialCaptureMesh(
++		const FScene* Scene,
 +		const FSceneView& View,
 +		FRHICommandList& RHICmdList,
 +		const FMeshBatch& MeshBatch)
 +	{
 +		check(IsInRenderingThread());
++		check(Scene);
 +
 +		// The caller must have an active render pass with the three PF_FloatRGBA
 +		// capture targets bound, plus the chart viewport/scissor already set.
@@ -176,9 +179,9 @@ index 9999999..aaaaaaa 100644
 +		DrawDynamicMeshPass(
 +			View,
 +			RHICmdList,
-+			[&MeshBatch, &View](FMeshPassDrawListContext* DrawListContext)
++			[Scene, &MeshBatch, &View](FMeshPassDrawListContext* DrawListContext)
 +			{
-+				FSoftwareRTMaterialCaptureMeshProcessor Processor(View, DrawListContext);
++				FSoftwareRTMaterialCaptureMeshProcessor Processor(Scene, View, DrawListContext);
 +				Processor.AddMeshBatch(MeshBatch, ~uint64(0), nullptr, -1);
 +			},
 +			true);
@@ -189,7 +192,7 @@ new file mode 100644
 index 0000000..aaaaaaa 100644
 --- /dev/null
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
-@@ -0,0 +1,25 @@
+@@ -0,0 +1,26 @@
 +// Copyright Epic Games, Inc. All Rights Reserved.
 +
 +#pragma once
@@ -211,6 +214,7 @@ index 0000000..aaaaaaa 100644
 +	 * the production RDG integration.
 +	 */
 +	RENDERER_API void DrawSoftwareRTMaterialCaptureMesh(
++		const FScene* Scene,
 +		const FSceneView& View,
 +		FRHICommandList& RHICmdList,
 +		const FMeshBatch& MeshBatch);
