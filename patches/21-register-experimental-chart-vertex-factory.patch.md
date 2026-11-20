@@ -31,7 +31,7 @@ The experimental VF follows that supported pattern. It does not subclass or modi
  * or draw parameters. It exists only to prove VF registration and Base Pass
  * material shader compilation.
  */
-class ENGINE_API FSoftwareRTChartVertexFactoryShaderParameters
+class FSoftwareRTChartVertexFactoryShaderParameters
     : public FLocalVertexFactoryShaderParameters
 {
     DECLARE_TYPE_LAYOUT(FSoftwareRTChartVertexFactoryShaderParameters, NonVirtual);
@@ -205,3 +205,16 @@ Do not change `LocalVertexFactory.ush` in this patch. The wrapper defines a dist
 If UE4.27 rejects the wrapper include, type registration, or Base Pass material permutation, stop here and fix registration. Do not add chart transforms or capture scheduling until this proof passes.
 
 No compile or runtime success is claimed by this patch.
+
+## UE4.27 API audit update
+
+- `IMPLEMENT_VERTEX_FACTORY_TYPE_EX` takes the seven boolean capability arguments used above, in the documented order.
+- `FLocalVertexFactory::ValidateCompiledResult` is declared and defined as a public static function with the signature used above.
+- `FLocalVertexFactoryShaderParameters::Bind` is inherited publicly from `FLocalVertexFactoryShaderParametersBase`.
+- `FLocalVertexFactoryShaderParametersBase::GetElementShaderBindingsBase` accepts the Local VF uniform buffer used above.
+- `FLocalVertexFactory::GetUniformBuffer()` returns `FRHIUniformBuffer*`.
+- UE4.27's Geometry Collection VF uses the same parameter-class derivation and registration pattern.
+
+One declaration was tightened after this audit: `FSoftwareRTChartVertexFactoryShaderParameters` is intentionally **not** marked `ENGINE_API`. It is an Engine-module implementation detail and derives from the non-exported `FLocalVertexFactoryShaderParameters`; exporting the derived parameter class is unnecessary and can trigger Windows DLL-interface warnings.
+
+Still unproven: shader compilation of the wrapper include and actual Base Pass selection/draw submission. This audit is source-signature validation only, not a compile result.
