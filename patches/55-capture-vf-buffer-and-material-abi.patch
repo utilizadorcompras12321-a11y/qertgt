@@ -520,7 +520,7 @@ index 0000000..9999999 100644
 +struct FVertexFactoryInput
 +{
 +	float4 Position      : ATTRIBUTE0;
-+	float3 TangentX      : ATTRIBUTE1;
++	float4 TangentX      : ATTRIBUTE1;
 +	float4 TangentZ      : ATTRIBUTE2;
 +	float2 TexCoords[4]  : ATTRIBUTE3;
 +	float4 ChartPosition : ATTRIBUTE7;
@@ -557,7 +557,7 @@ index 0000000..9999999 100644
 +
 +half3x3 SoftwareRTCalcTangentToLocal(FVertexFactoryInput Input)
 +{
-+	half3 TangentX = normalize((half3)Input.TangentX);
++	half3 TangentX = normalize((half3)Input.TangentX.xyz);
 +	half4 TangentZ = (half4)Input.TangentZ;
 +	TangentZ.xyz = normalize(TangentZ.xyz);
 +
