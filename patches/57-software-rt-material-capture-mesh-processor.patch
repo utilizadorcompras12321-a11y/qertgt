@@ -73,7 +73,7 @@ index 9999999..aaaaaaa 100644
 +
 +				const FMeshBatchElement& Element = MeshBatch.Elements[ElementIndex];
 +				if (Element.PrimitiveIdMode != PrimID_ForceZero
-+					|| Element.PrimitiveUniformBufferResource == nullptr)
++					|| Element.PrimitiveUniformBufferResource != &GIdentityPrimitiveUniformBuffer)
 +				{
 +					return;
 +				}
