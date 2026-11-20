@@ -2,7 +2,7 @@ diff --git a/Engine/Source/Runtime/Engine/Public/SoftwareRTCaptureVertexFactory.
 index 0000000..9999999 100644
 --- a/Engine/Source/Runtime/Engine/Public/SoftwareRTCaptureVertexFactory.h
 +++ b/Engine/Source/Runtime/Engine/Public/SoftwareRTCaptureVertexFactory.h
-@@ -1,50 +1,70 @@
+@@ -1,50 +1,71 @@
 -// Copyright Epic Games, Inc. All Rights Reserved.
 -
 -#pragma once
@@ -106,7 +106,8 @@ index 0000000..9999999 100644
 +
 +/**
 + * CPU-backed expanded vertex buffer for Software RT capture.
-+ * All mutation and resource initialization must occur on the render thread.
++ * Populate before InitResource(); mutation and initialization are render-thread only.
++ * Allocate a new buffer rather than modifying one referenced by submitted draws.
 + */
 +class ENGINE_API FSoftwareRTCaptureVertexBuffer : public FVertexBuffer
 +{
@@ -127,7 +128,7 @@ diff --git a/Engine/Source/Runtime/Engine/Private/SoftwareRTCaptureVertexFactory
 index 0000000..9999999 100644
 --- a/Engine/Source/Runtime/Engine/Private/SoftwareRTCaptureVertexFactory.cpp
 +++ b/Engine/Source/Runtime/Engine/Private/SoftwareRTCaptureVertexFactory.cpp
-@@ -1,72 +1,109 @@
+@@ -1,72 +1,105 @@
 -// Copyright Epic Games, Inc. All Rights Reserved.
 -
 -#include "SoftwareRTCaptureVertexFactory.h"
@@ -278,15 +279,11 @@ index 0000000..9999999 100644
 +	const TArray<FSoftwareRTCaptureVertex>& InVertices)
 +{
 +	check(IsInRenderingThread());
++	check(!IsInitialized());
 +	check(InVertices.Num() > 0);
 +	check((InVertices.Num() % 3) == 0);
 +
 +	Vertices = InVertices;
-+
-+	if (IsInitialized())
-+	{
-+		UpdateRHI();
-+	}
 +}
 +
 +void FSoftwareRTCaptureVertexBuffer::InitRHI()
@@ -313,7 +310,7 @@ diff --git a/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush b/Engine/
 index 0000000..9999999 100644
 --- a/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
 +++ b/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
-@@ -1,197 +1,218 @@
+@@ -1,197 +1,223 @@
 -// Copyright Epic Games, Inc. All Rights Reserved.
 -
 -#include "VertexFactoryCommon.ush"
@@ -554,6 +551,11 @@ index 0000000..9999999 100644
 +
 +	TANGENTTOWORLD_INTERPOLATOR_BLOCK
 +};
++
++float4 SoftwareRTGetChartClipPosition(FVertexFactoryInput Input)
++{
++	return Input.ChartPosition;
++}
 +
 +half3x3 SoftwareRTCalcTangentToLocal(FVertexFactoryInput Input)
 +{
