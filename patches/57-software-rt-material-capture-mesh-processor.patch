@@ -16,7 +16,7 @@ index 9999999..aaaaaaa 100644
  
  namespace SoftwareRTMaterialCapture
  {
-@@ -85,7 +89,147 @@
+@@ -85,7 +88,147 @@
  	IMPLEMENT_MATERIAL_SHADER_TYPE(
  		,
  		FSoftwareRTMaterialCapturePS,
@@ -199,7 +199,7 @@ diff --git a/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf b/Engine/Shade
 index 9999999..aaaaaaa 100644
 --- a/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf
 +++ b/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf
-@@ -31,6 +31,4 @@
+@@ -32,6 +32,4 @@
  		Input,
  		VFIntermediates,
  		VertexParameters);
@@ -215,7 +215,7 @@ index 9999999..aaaaaaa 100644
 -\tfloat3 TranslatedWorldPosition : TEXCOORD12;
 +	float3 TranslatedWorldPosition : TEXCOORD12;
   };
-@@ -166,2 +166,2 @@
+@@ -167,2 +167,2 @@
 -\tInterpolants.TranslatedWorldPosition = VertexParameters.WorldPosition;
 +	Interpolants.TranslatedWorldPosition = VertexParameters.WorldPosition;
  	Interpolants.TangentToWorld0 = float4(Intermediates.TangentToWorld[0], 0);
