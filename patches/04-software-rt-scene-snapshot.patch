@@ -21,7 +21,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h b/Engine/Sour
 +	/** Stable-at-sync-point view of the current primitives for Software RT consumers. */
 +	TArray<FSoftwareRTPrimitiveInstance> SoftwareRTPrimitiveInstances;
 +	/** Set by render-thread scene mutations; cleared after the Software RT snapshot is rebuilt. */
-+	bool bSoftwareRTSceneDirty = false
++	bool bSoftwareRTSceneDirty = false;
 diff --git a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp b/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
 --- a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
