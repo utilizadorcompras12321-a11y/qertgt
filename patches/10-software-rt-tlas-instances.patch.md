@@ -1,17 +1,17 @@
 # 10 — Software RT TLAS over shared BLAS instances
 
-Status: proposed integration diff; not applied to a full UE4.27.2 checkout or compiled.
+Status: proposed Renderer-private implementation; not applied to a full UE4.27.2 checkout or compiled.
 
 ## What it adds
 
-- A TLAS instance record containing the shared BLAS key, local-to-world transform and world-space bounds.
-- A flat binary TLAS with leaves containing up to two instances by default.
-- Median partitioning on the longest axis of instance-bound centroids.
-- Scene synchronization gathers only instances whose BLAS exists in the shared cache, then rebuilds the TLAS after the BLAS cache has been pruned.
+- A TLAS instance references a typed FSoftwareRTGeometryKey, local-to-world transform and world-space bounds.
+- Only snapshot entries with a successfully built BLAS are inserted.
+- TLAS is rebuilt after scene synchronization and BLAS pruning.
+- Transform-only changes rebuild TLAS but preserve local-space BLAS data.
 
 ## Diff
 
-```diff
+\`\`\`diff
 diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.h
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.h
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.h
@@ -21,41 +21,36 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.h b
 @@
  };
  
-+/** One scene instance referencing shared local-space BLAS geometry. */
++/** One world instance referencing shared local-space geometry. */
 +struct FSoftwareRTTLASInstance
 +{
-+	const void* BLASKey = nullptr;
-+	FMatrix LocalToWorld = FMatrix::Identity;
-+	FBox WorldBounds = FBox(ForceInit);
++\tFSoftwareRTGeometryKey BLASKey;
++\tFMatrix LocalToWorld = FMatrix::Identity;
++\tFBox WorldBounds = FBox(ForceInit);
 +};
 +
-+/** Top-level BVH over world-space instance bounds. */
 +struct FSoftwareRTTLASNode
 +{
-+	FBox Bounds = FBox(ForceInit);
-+	int32 LeftChild = INDEX_NONE;
-+	int32 RightChild = INDEX_NONE;
-+	uint32 FirstInstance = 0;
-+	uint32 NumInstances = 0;
++\tFBox Bounds = FBox(ForceInit);
++\tint32 LeftChild = INDEX_NONE;
++\tint32 RightChild = INDEX_NONE;
++\tuint32 FirstInstance = 0;
++\tuint32 NumInstances = 0;
 +};
 +
 +struct FSoftwareRTTLAS
 +{
-+	TArray<FSoftwareRTTLASInstance> Instances;
-+	TArray<FSoftwareRTTLASNode> Nodes;
-+	void Reset()
-+	{
-+		Instances.Reset();
-+		Nodes.Reset();
-+	}
-+	bool IsValid() const { return Instances.Num() > 0 && Nodes.Num() > 0; }
++\tTArray<FSoftwareRTTLASInstance> Instances;
++\tTArray<FSoftwareRTTLASNode> Nodes;
++\tvoid Reset() { Instances.Reset(); Nodes.Reset(); }
++\tbool IsValid() const { return Instances.Num() > 0 && Nodes.Num() > 0; }
 +};
 +
  class FSoftwareRTBVHBuilder
  {
  public:
- 	static bool BuildStaticMeshBLAS(const FSoftwareRTStaticMeshGeometry& Geometry, FSoftwareRTBLAS& OutBLAS, uint32 MaxLeafTriangles = 4);
-+	static bool BuildTLAS(const TArray<FSoftwareRTTLASInstance>& SceneInstances, FSoftwareRTTLAS& OutTLAS, uint32 MaxLeafInstances = 2);
+ \tstatic bool BuildStaticMeshBLAS(const FSoftwareRTStaticMeshGeometry& Geometry, FSoftwareRTBLAS& OutBLAS, uint32 MaxLeafTriangles = 4);
++\tstatic bool BuildTLAS(const TArray<FSoftwareRTTLASInstance>& SceneInstances, FSoftwareRTTLAS& OutTLAS, uint32 MaxLeafInstances = 2);
  };
 diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.cpp
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.cpp
@@ -64,50 +59,47 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.cpp
  namespace
  {
 @@
- 	static int32 BuildNode(FSoftwareRTBLAS& B, uint32 First, uint32 Count, uint32 LeafLimit, uint32 Depth)
+ \tstatic int32 BuildNode(FSoftwareRTBLAS& B, uint32 First, uint32 Count, uint32 LeafLimit, uint32 Depth)
 @@
- 	}
+ \t}
 +
-+	static int32 BuildTLASNode(FSoftwareRTTLAS& T, uint32 First, uint32 Count, uint32 LeafLimit, uint32 Depth)
-+	{
-+		const int32 NodeIndex = T.Nodes.AddDefaulted();
-+		FBox Bounds(ForceInit), Centroids(ForceInit);
-+		const uint32 End = First + Count;
-+		for (uint32 I = First; I < End; ++I)
-+		{
-+			Bounds += T.Instances[I].WorldBounds;
-+			Centroids += T.Instances[I].WorldBounds.GetCenter();
-+		}
-+		T.Nodes[NodeIndex].Bounds = Bounds;
-+		if (Count <= LeafLimit || Depth >= 64)
-+		{
-+			T.Nodes[NodeIndex].FirstInstance = First;
-+			T.Nodes[NodeIndex].NumInstances = Count;
-+			return NodeIndex;
-+		}
++\tstatic int32 BuildTLASNode(FSoftwareRTTLAS& T, uint32 First, uint32 Count, uint32 LeafLimit, uint32 Depth)
++\t{
++\t\tconst int32 NodeIndex = T.Nodes.AddDefaulted();
++\t\tFBox Bounds(ForceInit), Centroids(ForceInit);
++\t\tconst uint32 End = First + Count;
++\t\tfor (uint32 I = First; I < End; ++I)
++\t\t{
++\t\t\tBounds += T.Instances[I].WorldBounds;
++\t\t\tCentroids += T.Instances[I].WorldBounds.GetCenter();
++\t\t}
++\t\tT.Nodes[NodeIndex].Bounds = Bounds;
++\t\tif (Count <= LeafLimit || Depth >= 64)
++\t\t{
++\t\t\tT.Nodes[NodeIndex].FirstInstance = First;
++\t\t\tT.Nodes[NodeIndex].NumInstances = Count;
++\t\t\treturn NodeIndex;
++\t\t}
 +
-+		const int32 Axis = LongestAxis(Centroids.GetSize());
-+		const float Split = AxisValue(Centroids.GetCenter(), Axis);
-+		uint32 Middle = First;
-+		for (uint32 I = First; I < End; ++I)
-+		{
-+			if (AxisValue(T.Instances[I].WorldBounds.GetCenter(), Axis) < Split)
-+			{
-+				T.Instances.Swap((int32)I, (int32)Middle);
-+				++Middle;
-+			}
-+		}
-+		if (Middle == First || Middle == End)
-+		{
-+			Middle = First + Count / 2;
-+		}
-+		const int32 Left = BuildTLASNode(T, First, Middle - First, LeafLimit, Depth + 1);
-+		const int32 Right = BuildTLASNode(T, Middle, End - Middle, LeafLimit, Depth + 1);
-+		FSoftwareRTTLASNode& Node = T.Nodes[NodeIndex];
-+		Node.LeftChild = Left;
-+		Node.RightChild = Right;
-+		return NodeIndex;
-+	}
++\t\tconst int32 Axis = LongestAxis(Centroids.GetSize());
++\t\tconst float Split = AxisValue(Centroids.GetCenter(), Axis);
++\t\tuint32 Middle = First;
++\t\tfor (uint32 I = First; I < End; ++I)
++\t\t{
++\t\t\tif (AxisValue(T.Instances[I].WorldBounds.GetCenter(), Axis) < Split)
++\t\t\t{
++\t\t\t\tT.Instances.Swap((int32)I, (int32)Middle);
++\t\t\t\t++Middle;
++\t\t\t}
++\t\t}
++\t\tif (Middle == First || Middle == End) Middle = First + Count / 2;
++\t\tconst int32 Left = BuildTLASNode(T, First, Middle - First, LeafLimit, Depth + 1);
++\t\tconst int32 Right = BuildTLASNode(T, Middle, End - Middle, LeafLimit, Depth + 1);
++\t\tFSoftwareRTTLASNode& Node = T.Nodes[NodeIndex];
++\t\tNode.LeftChild = Left;
++\t\tNode.RightChild = Right;
++\t\treturn NodeIndex;
++\t}
  }
 @@
  bool FSoftwareRTBVHBuilder::BuildStaticMeshBLAS(const FSoftwareRTStaticMeshGeometry& G, FSoftwareRTBLAS& Out, uint32 LeafLimit)
@@ -116,80 +108,51 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTBVH.cpp
 +
 +bool FSoftwareRTBVHBuilder::BuildTLAS(const TArray<FSoftwareRTTLASInstance>& SceneInstances, FSoftwareRTTLAS& Out, uint32 LeafLimit)
 +{
-+	Out.Reset();
-+	if (SceneInstances.Num() == 0 || LeafLimit == 0)
-+	{
-+		return false;
-+	}
-+
-+	Out.Instances.Reserve(SceneInstances.Num());
-+	for (const FSoftwareRTTLASInstance& Source : SceneInstances)
-+	{
-+		if (!Source.BLASKey || !Source.WorldBounds.IsValid)
-+		{
-+			continue;
-+		}
-+		Out.Instances.Add(Source);
-+	}
-+	if (Out.Instances.Num() == 0)
-+	{
-+		Out.Reset();
-+		return false;
-+	}
-+
-+	BuildTLASNode(Out, 0, (uint32)Out.Instances.Num(), LeafLimit, 0);
-+	return Out.IsValid();
++\tOut.Reset();
++\tif (SceneInstances.Num() == 0 || LeafLimit == 0) return false;
++\tOut.Instances.Reserve(SceneInstances.Num());
++\tfor (const FSoftwareRTTLASInstance& Source : SceneInstances)
++\t{
++\t\tif (Source.BLASKey.IsValid() && Source.WorldBounds.IsValid)
++\t\t{
++\t\t\tOut.Instances.Add(Source);
++\t\t}
++\t}
++\tif (Out.Instances.Num() == 0)
++\t{
++\t\tOut.Reset();
++\t\treturn false;
++\t}
++\tBuildTLASNode(Out, 0, (uint32)Out.Instances.Num(), LeafLimit, 0);
++\treturn Out.IsValid();
 +}
 diff --git a/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h b/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h
 --- a/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h
 +++ b/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h
 @@
- 	TMap<const void*, FSoftwareRTBLAS> SoftwareRTBLASCache;
-+	/** World-space hierarchy over current instances referencing SoftwareRTBLASCache. */
-+	FSoftwareRTTLAS SoftwareRTTLAS;
+ \tTMap<FSoftwareRTGeometryKey, FSoftwareRTBLAS> SoftwareRTBLASCache;
++\tFSoftwareRTTLAS SoftwareRTTLAS;
 diff --git a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp b/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
 --- a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
 @@
- 		for (auto It = SoftwareRTBLASCache.CreateIterator(); It; ++It)
- 		{
- 			if (!ActiveSoftwareRTBLASKeys.Contains(It.Key()))
- 			{
- 				It.RemoveCurrent();
- 			}
- 		}
-+
-+		TArray<FSoftwareRTTLASInstance> TLASInstances;
-+		TLASInstances.Reserve(SoftwareRTPrimitiveInstances.Num());
-+		for (const FSoftwareRTPrimitiveInstance& PrimitiveInstance : SoftwareRTPrimitiveInstances)
-+		{
-+			if (PrimitiveInstance.BLASKey && SoftwareRTBLASCache.Contains(PrimitiveInstance.BLASKey))
-+			{
-+				FSoftwareRTTLASInstance& TLASInstance = TLASInstances.AddDefaulted_GetRef();
-+				TLASInstance.BLASKey = PrimitiveInstance.BLASKey;
-+				TLASInstance.LocalToWorld = PrimitiveInstance.LocalToWorld;
-+				TLASInstance.WorldBounds = PrimitiveInstance.WorldBounds.GetBox();
-+			}
-+		}
-+		FSoftwareRTBVHBuilder::BuildTLAS(TLASInstances, SoftwareRTTLAS);
- 		bSoftwareRTSceneDirty = false;
- 	}
+-\t\t\tif (PrimitiveInstance.BLASKey && SoftwareRTBLASCache.Contains(PrimitiveInstance.BLASKey))
++\t\t\tif (PrimitiveInstance.bHasBLAS && SoftwareRTBLASCache.Contains(PrimitiveInstance.BLASKey))
+ \t\t\t{
+ \t\t\t\tFSoftwareRTTLASInstance& TLASInstance = TLASInstances.AddDefaulted_GetRef();
+ \t\t\t\tTLASInstance.BLASKey = PrimitiveInstance.BLASKey;
+ \t\t\t\tTLASInstance.LocalToWorld = PrimitiveInstance.LocalToWorld;
+ \t\t\t\tTLASInstance.WorldBounds = PrimitiveInstance.WorldBounds.GetBox();
+ \t\t\t}
+ \t\t}
+ \t\tFSoftwareRTBVHBuilder::BuildTLAS(TLASInstances, SoftwareRTTLAS);
+\`\`\`
 
-```
+## Limits
 
-## Important behavior
-
-The BLAS remains local-space and shared. The TLAS stores a transform per instance. A transform update rebuilds the TLAS but does not rebuild the BLAS. This is the intended separation for static mesh instances.
-
-## Limitations
-
-- This is a full TLAS rebuild at scene sync, not an incremental refit. It is acceptable as a correctness-first prototype, but moving-heavy scenes will need refit/rebuild budgeting.
-- No ray traversal or ray-space transform is implemented yet. Traversal must transform rays into BLAS-local space and correctly handle non-uniform scale and negative determinant transforms.
-- Bounds are taken from the primitive snapshot. They are conservative proxy bounds, not recomputed from the BLAS.
-- The same LOD 0 / resource-pointer identity limitations documented in patch 09 apply.
-- No handling for multiple LODs per view, per-instance material overrides, HISM-specific instance data, WPO, spline deformation, Nanite or unsupported proxy types.
-- `FBox::IsValid`, `FBoxSphereBounds::GetBox`, and all exact patch contexts must be verified against the user's UE4.27.2 tree before application.
-
-## Dependencies
-
-Requires patches 04, 06, 07, 08 and 09. Patch 04's missing semicolon must be fixed. This patch does not claim working ray queries; it only establishes the two-level acceleration-structure data layout and scene build path.
+- Full TLAS rebuild on scene sync; no incremental refit.
+- Bounds are proxy world bounds, conservative rather than recomputed from BLAS.
+- Initial provider uses LOD 0, not the per-view rendered LOD.
+- No WPO, spline deformation, Nanite, HISM/ISM, Landscape or per-instance material overrides.
+- The TLAS builder must reject invalid/empty bounds and guard integer overflow for large scenes before production use.
+- Requires patches 04, 06, 07, 08 and 09. Not compile-tested.
