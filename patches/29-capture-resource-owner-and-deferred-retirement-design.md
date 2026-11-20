@@ -2,6 +2,8 @@
 
 Status: ownership design based on UE4.27 source conventions. No engine source was changed; no compile or GPU test was performed.
 
+**Lifecycle correction:** the owner destructor must not directly call `FRenderResource::ReleaseResource()` unless it is guaranteed to run on the rendering thread. Queue `BeginReleaseResource()` after the final render-thread use, keep the owner alive until that release has executed, and destroy the VF only after it is uninitialized. See [Patch 30 — Local Vertex Factory resource lifecycle audit](30-local-vertex-factory-resource-lifecycle-audit.md) for the verified details.
+
 Mirror: `AlexMercer-MA/UnrealEngine-4.27`, commit `306a7e9f7fb53f14c2cb3bfd3854ad906710a17e`.
 
 ## 1. Decision
@@ -42,9 +44,9 @@ public:
 
     virtual ~FSoftwareRTCaptureResourceOwner()
     {
-        // Release chart VF resources using the verified UE4.27
-        // render-resource release path before destroying the VF object.
-        // RHI references are released only through their owning UE4.27 types.
+        // Do not directly release an initialized FRenderResource here
+        // unless destruction is guaranteed to run on the rendering thread.
+        // See Patch 30 for the required two-phase retirement sequence.
     }
 };
 ```
@@ -55,8 +57,8 @@ Do not copy this sketch into the engine as-is. The exact ownership types and VF 
 
 | Resource | Required owner | Retirement condition |
 |---|---|---|
-| Chart VF object | Capture owner | No command can refer to it; release its render resource on the correct thread before object destruction |
-| Chart VF uniform buffer | Chart VF / capture owner through the VF's verified ownership | Must remain valid while draw bindings can be submitted |
+| Chart VF object | Capture owner | No command can refer to it; queue render-resource release on the correct thread before object destruction |
+| Chart VF uniform buffer | Chart VF through its verified ownership | Must remain valid while draw bindings can be submitted |
 | Chart mapping uniform buffer | Capture owner via owning RHI reference | No pending command or GPU/RHI use can reference it |
 | Vertex/index buffers | Existing Static Mesh LOD owner; capture owner only if it creates replacement buffers | Preserve original LOD lifetime, or retain replacement buffers through their owning RHI refs |
 | Capture render targets/textures | Capture owner / texture resource owner | No pending draw or RHI operation can reference them |
@@ -82,8 +84,9 @@ Do not duplicate ownership of Static Mesh LOD buffers unnecessarily. Their exist
 ### Retire
 - Stop producing new commands for the generation.
 - Ensure no queued CPU-side pass can still build or submit commands referring to it.
-- Transfer the owner to `BeginCleanup` instead of deleting it directly.
-- In the owner's destruction path, release chart VF render resources using the verified UE4.27 resource-release mechanism, then release RHI references through their owning types.
+- Queue `BeginReleaseResource(&ChartVF)` after the final render-thread use; keep the owner alive until that command has executed.
+- Transfer the owner to `BeginCleanup` only as the deferred C++ destruction stage, not as a replacement for render-resource release.
+- Destroy only after the chart VF is uninitialized and any separately required RHI/GPU lifetime condition is satisfied.
 
 ## 6. FRenderCommandFence is not the default solution
 
