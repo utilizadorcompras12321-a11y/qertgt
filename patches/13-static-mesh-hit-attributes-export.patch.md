@@ -79,7 +79,7 @@ diff --git a/Engine/Source/Runtime/Engine/Private/StaticMeshRender.cpp b/Engine/
 @@
  	OutGeometry.Positions.Reserve(NumVertices);
 +	OutGeometry.NumTexCoords = NumTexCoords;
-+	OutGeometry.UVs.Reserve((int64)NumVertices * NumTexCoords);
++	OutGeometry.UVs.Reserve((int32)((uint64)NumVertices * (uint64)NumTexCoords));
 +	OutGeometry.TangentX.Reserve(NumVertices);
 +	OutGeometry.TangentZ.Reserve(NumVertices);
 +	OutGeometry.VertexColors.Reserve(NumVertices);
