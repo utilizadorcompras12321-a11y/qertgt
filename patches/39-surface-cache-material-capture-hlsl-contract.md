@@ -65,13 +65,16 @@ FMaterialPixelParameters MaterialParameters =
 
 FPixelMaterialInputs PixelMaterialInputs = (FPixelMaterialInputs)0;
 
-float4 ScreenPosition =
-    SvPositionToResolvedScreenPosition(In.SvPosition);
+// The chart pass must define this explicitly. It is atlas-domain data,
+// not a reconstruction through the scene camera matrices.
+float4 ScreenPosition = /* explicit atlas-domain value */;
 
 // IMPORTANT: this must be the interpolated ORIGINAL surface position,
 // not a position reconstructed from the chart-rasterized SV_Position.
 float3 SurfaceTranslatedWorldPosition = Interpolants.SurfaceTranslatedWorldPosition;
 
+// CalcMaterialParametersEx evaluates CalcPixelMaterialInputs internally.
+// Do NOT call CalcPixelMaterialInputs separately: that evaluates the graph twice.
 CalcMaterialParametersEx(
     MaterialParameters,
     PixelMaterialInputs,
