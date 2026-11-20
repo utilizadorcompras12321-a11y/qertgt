@@ -1,0 +1,183 @@
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+new file mode 100644
+index 0000000..9999999
+--- /dev/null
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+@@ -0,0 +1,90 @@
++// Copyright Epic Games, Inc. All Rights Reserved.
++
++#include "MaterialShared.h"
++#include "MaterialShader.h"
++#include "MeshMaterialShader.h"
++#include "SoftwareRTCaptureVertexFactory.h"
++
++namespace SoftwareRTMaterialCapture
++{
++	static bool ShouldCompile(const FMeshMaterialShaderPermutationParameters& Parameters)
++	{
++		const FMaterialShaderParameters& Material = Parameters.MaterialParameters;
++
++		return Material.bIsUsedWithSoftwareRTCapture
++			&& Material.MaterialDomain == MD_Surface
++			&& Material.BlendMode == BLEND_Opaque
++			&& Material.TessellationMode == MTM_NoTessellation
++			&& !Material.bHasVertexPositionOffsetConnected
++			&& !Material.bHasPixelDepthOffsetConnected
++			&& Parameters.VertexFactoryType == &FSoftwareRTCaptureVertexFactory::StaticType
++			&& FMeshMaterialShader::ShouldCompilePermutation(Parameters);
++	}
++
++	class FSoftwareRTMaterialCaptureVS : public FMeshMaterialShader
++	{
++	public:
++		DECLARE_SHADER_TYPE(FSoftwareRTMaterialCaptureVS, MeshMaterial);
++
++		static bool ShouldCompilePermutation(const FMeshMaterialShaderPermutationParameters& Parameters)
++		{
++			return SoftwareRTMaterialCapture::ShouldCompile(Parameters);
++		}
++
++		static void ModifyCompilationEnvironment(
++			const FMaterialShaderPermutationParameters& Parameters,
++			FShaderCompilerEnvironment& OutEnvironment)
++		{
++			FMeshMaterialShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
++			OutEnvironment.SetDefine(TEXT("SOFTWARE_RT_MATERIAL_CAPTURE"), 1);
++		}
++
++		FSoftwareRTMaterialCaptureVS() = default;
++		FSoftwareRTMaterialCaptureVS(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
++			: FMeshMaterialShader(Initializer)
++		{
++		}
++	};
++
++	class FSoftwareRTMaterialCapturePS : public FMeshMaterialShader
++	{
++	public:
++		DECLARE_SHADER_TYPE(FSoftwareRTMaterialCapturePS, MeshMaterial);
++
++		static bool ShouldCompilePermutation(const FMeshMaterialShaderPermutationParameters& Parameters)
++		{
++			return SoftwareRTMaterialCapture::ShouldCompile(Parameters);
++		}
++
++		static void ModifyCompilationEnvironment(
++			const FMaterialShaderPermutationParameters& Parameters,
++			FShaderCompilerEnvironment& OutEnvironment)
++		{
++			FMeshMaterialShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
++			OutEnvironment.SetDefine(TEXT("SOFTWARE_RT_MATERIAL_CAPTURE"), 1);
++			OutEnvironment.SetRenderTargetOutputFormat(0, PF_FloatRGBA);
++			OutEnvironment.SetRenderTargetOutputFormat(1, PF_FloatRGBA);
++			OutEnvironment.SetRenderTargetOutputFormat(2, PF_FloatRGBA);
++		}
++
++		FSoftwareRTMaterialCapturePS() = default;
++		FSoftwareRTMaterialCapturePS(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
++			: FMeshMaterialShader(Initializer)
++		{
++		}
++	};
++
++	IMPLEMENT_MATERIAL_SHADER_TYPE(
++		,
++		FSoftwareRTMaterialCaptureVS,
++		TEXT("/Engine/Private/SoftwareRTMaterialCapture.usf"),
++		TEXT("MainVS"),
++		SF_Vertex);
++
++	IMPLEMENT_MATERIAL_SHADER_TYPE(
++		,
++		FSoftwareRTMaterialCapturePS,
++		TEXT("/Engine/Private/SoftwareRTMaterialCapture.usf"),
++		TEXT("MainPS"),
++		SF_Pixel);
++}
+diff --git a/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf b/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf
+new file mode 100644
+index 0000000..9999999
+--- /dev/null
++++ b/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf
+@@ -0,0 +1,81 @@
++// Copyright Epic Games, Inc. All Rights Reserved.
++
++// Material evaluation for the Software RT Surface Cache.
++// SV_POSITION is chart/atlas space. Original translated world position and
++// material interpolants travel independently and are used for material inputs.
++
++#include "Common.ush"
++#include "/Engine/Generated/Material.ush"
++#include "/Engine/Generated/VertexFactory.ush"
++
++struct FSoftwareRTCaptureVSOutput
++{
++	FVertexFactoryInterpolantsVSToPS FactoryInterpolants;
++	float3 TranslatedWorldPosition : TEXCOORD15;
++	float4 Position : SV_POSITION;
++};
++
++FSoftwareRTCaptureVSOutput MainVS(FVertexFactoryInput Input)
++{
++	FSoftwareRTCaptureVSOutput Output;
++
++	FVertexFactoryIntermediates VFIntermediates = GetVertexFactoryIntermediates(Input);
++	float4 WorldPosition = VertexFactoryGetWorldPosition(Input, VFIntermediates);
++	float3x3 TangentToLocal = VertexFactoryGetTangentToLocal(Input, VFIntermediates);
++	FMaterialVertexParameters VertexParameters = GetMaterialVertexParameters(
++		Input,
++		VFIntermediates,
++		WorldPosition.xyz,
++		TangentToLocal);
++
++	Output.Position = SoftwareRTGetChartClipPosition(Input);
++	Output.TranslatedWorldPosition = WorldPosition.xyz;
++	Output.FactoryInterpolants = VertexFactoryGetInterpolantsVSToPS(
++		Input,
++		VFIntermediates,
++		VertexParameters);
++
++	return Output;
++}
++
++void FPixelShaderInOut_MainPS(
++	in FVertexFactoryInterpolantsVSToPS Interpolants,
++	inout FPixelShaderIn In,
++	inout FPixelShaderOut Out)
++{
++	ResolvedView = ResolveView();
++
++	FMaterialPixelParameters MaterialParameters = GetMaterialPixelParameters(
++		Interpolants,
++		In.SvPosition);
++
++	FPixelMaterialInputs PixelMaterialInputs;
++	const float4 ChartScreenPosition = 0;
++	const float3 TranslatedWorldPosition = Interpolants.TranslatedWorldPosition;
++	CalcMaterialParametersEx(
++		MaterialParameters,
++		PixelMaterialInputs,
++		In.SvPosition,
++		ChartScreenPosition,
++		In.bIsFrontFace,
++		TranslatedWorldPosition,
++		TranslatedWorldPosition);
++
++	const half3 BaseColor = GetMaterialBaseColor(PixelMaterialInputs);
++	const half Roughness = GetMaterialRoughness(PixelMaterialInputs);
++	const half Metallic = GetMaterialMetallic(PixelMaterialInputs);
++	const half Specular = GetMaterialSpecular(PixelMaterialInputs);
++	const half3 Emissive = GetMaterialEmissive(PixelMaterialInputs);
++	const float3 WorldNormal = normalize(MaterialParameters.WorldNormal);
++
++	Out.MRT[0] = float4(BaseColor, Roughness);
++	Out.MRT[1] = float4(WorldNormal * 0.5f + 0.5f, Metallic);
++	Out.MRT[2] = float4(Emissive, Specular);
++}
++
++#define PIXELSHADEROUTPUT_INTERPOLANTS 1
++#define PIXELSHADEROUTPUT_MRT0 1
++#define PIXELSHADEROUTPUT_MRT1 1
++#define PIXELSHADEROUTPUT_MRT2 1
++
++#include "PixelShaderOutputCommon.ush"
