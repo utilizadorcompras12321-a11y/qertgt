@@ -1,30 +1,78 @@
-# Patch 03 — Generic software-RT material representation
+# Patch 03 — Shared Software RT Core and Surface Cache
 
-Target: UE 4.27.2 source. This replaces the direct per-ray Material Graph evaluation proposal.
+Target: UE 4.27.2 source. This is the selected shared architecture for software RT shadows, GI, and reflections.
 
 ## Decision
 
-**Do not execute the complete Unreal Material Graph at every software ray hit.** That is too expensive and is not the normal fast path used by production game renderers.
+Build one Engine/Renderer-owned **Software RT Core** shared by all software RT effects. Do not build separate acceleration structures or material systems for DDGI, shadows, and reflections.
 
-Use an Engine-owned **Software RT Surface Cache**: render/capture material properties through the existing raster material pipeline into a reusable surface representation, then let software RT consumers sample that representation at hit points.
+The core owns reusable scene representation and hit data. Each effect owns its ray generation, acceptance rules, shading/transport, denoising, and temporal history.
 
-This follows the established Surface Cache approach used by Unreal Lumen: software tracing finds surfaces using a cheaper geometric representation, while material properties are looked up from cached surface captures. Epic documents that Lumen captures material properties from multiple mesh-facing cards and amortizes updates over frames. The same principle is appropriate here, but this implementation must be generic UE4.27 Engine infrastructure and must not depend on Lumen, DDGI, a plugin, or a particular BVH.
+The visual target is DXR-like scene coverage, not bit-identical DXR behavior or hardware-DXR performance. SSR is not a required stage or primary source.
 
-## Requirements
+## Shared architecture
 
-- Every supported regular Material and Material Instance participates automatically. **No user-facing checkbox, per-material opt-in, special material asset, or manual authoring step.**
-- The original Material Graph remains the source of truth. The cache is populated by rendering the original material through the normal raster material pipeline, not by maintaining a second graph or a hand-authored simplified material.
-- Material Instances must capture their resolved scalar/vector/texture parameters and overrides.
-- The cache is generic Engine/Renderer infrastructure. DDGI, software RT shadows, software RT reflections, and future consumers can read it.
-- Consumers own their tracing structures and hit generation. The cache API must not assume a BVH, SDF, voxel grid, or DDGI data structure.
-- Do not add a compute shader variant for full Material Graph evaluation as the primary path. Compute graph evaluation may be reconsidered only for a narrowly justified fallback or feature.
+```
+UE4 Renderer scene
+  ├─ Static mesh geometry ── BLAS
+  ├─ Instanced geometry ──── shared BLAS + instance records
+  ├─ Dynamic geometry ────── dynamic/refitted BLAS
+  └─ Primitive transforms ── TLAS
+                              |
+                    Software RT Core
+                    ├─ scene membership/culling
+                    ├─ BLAS/TLAS lifecycle
+                    ├─ triangle intersection
+                    ├─ hit record (primitive, instance, triangle,
+                    |             barycentrics, distance, UV data)
+                    └─ material surface lookup
+                              |
+              ┌───────────────┼────────────────┐
+              |               |                |
+          RT Shadows        RT GI        RT Reflections
+          visibility       diffuse        specular
+          rays             rays            rays
+          own resolve      own resolve     own resolve
+          own history      own history     own history
+```
 
-## Surface representation
+## Geometry representation
 
-Use a set of surface captures/cards per renderable mesh or primitive, with a GPU-resident atlas or equivalent cache storage. Each capture stores the material outputs needed by RT consumers, initially:
+Use a GPU-traversable triangle BVH as the primary representation. SDF/voxel structures may be added later as optional accelerators or fallbacks, not as the authoritative geometry for general reflections.
+
+- **BLAS:** geometry-local acceleration structure, shareable by multiple instances of the same mesh.
+- **TLAS:** instance transforms and references to BLAS; update/refit when instances move.
+- **Static geometry:** build once and retain.
+- **Movable instances:** update instance records/TLAS without rebuilding unchanged BLAS.
+- **Deforming/skinned geometry:** explicit dynamic geometry path; initially refit/rebuild only affected BLAS within a budget.
+- **WPO:** must be represented in traced geometry or explicitly unsupported for that primitive. Updating only material captures is insufficient.
+- **Unsupported or excluded primitives:** expose coverage/stat counters; never silently pretend the scene is complete.
+
+The core must not assume a specific consumer, DDGI cascade, voxel layout, or plugin.
+
+## Shared hit contract
+
+A successful intersection must provide enough information for consumers and material lookup:
+
+- primitive and instance identity;
+- geometry/triangle identity;
+- hit distance and world-space position;
+- barycentric coordinates;
+- geometric normal and interpolated shading basis;
+- UV channels needed by the material capture mapping.
+
+Do not reduce a triangle hit to only a world position: that loses stable surface identity and makes cache lookup unreliable.
+
+## Material representation
+
+Do not execute the complete Material Graph at every ray hit.
+
+Use an Engine-owned **Software RT Surface Cache**, populated through the existing raster material pipeline. All ordinary Materials and Material Instances participate automatically; no user-facing checkbox, per-material opt-in, special material asset, or manual authoring step.
+
+Initial cached properties:
 
 - Base Color
-- World/Shading Normal (and/or a reconstructible tangent-space normal representation)
+- Shading Normal
 - Roughness
 - Metallic
 - Specular
@@ -32,87 +80,71 @@ Use a set of surface captures/cards per renderable mesh or primitive, with a GPU
 - Ambient Occlusion
 - Opacity Mask / coverage for masked materials
 
-The exact packing and formats must be selected against UE4.27 RHI capabilities and memory budgets. Avoid storing duplicate channels and avoid assuming FP16 is required for every property.
+Material Instances use their resolved render proxy and normal uniform-expression/parameter path. The cache is shared across all RT consumers.
 
-A hit must resolve to a cache address using stable surface coordinates supplied by the consumer. For a card-based representation, this requires a mapping from the hit primitive/local surface position to the selected card and atlas UV. If the consumer only has a voxel/SDF hit without enough surface coordinates, the cache lookup contract must explicitly define how the surface point is projected to a card; do not invent UVs.
+The cache mapping must be based on stable surface identity/coordinates. Do not assume Lightmap UVs exist or are unique. A card/atlas implementation needs a deterministic mapping from primitive + hit position/normal to a capture and atlas UV. Coverage misses must be measurable and visualizable.
 
-## Capture and update policy
+The capture is an approximation of the original material at finite resolution and limited directions. Raster-only expressions (SceneTexture, PixelDepth, screen coordinates, pixel derivatives) do not have universal view-independent ray-hit semantics. Document these limits rather than inventing values. Translucency needs a separate transmission representation.
 
-- Populate captures using the existing raster material rendering path so normal material expressions, texture sampling, and Material Instance parameters work without a compute material interpreter.
-- Generate card placement and capture resources automatically from renderable geometry; do not require artists to mark materials or meshes.
-- Static content should be captured once and retained until geometry/material state changes.
-- Dynamic or changing content must update incrementally/amortized across frames, not force all captures to rerender every frame.
-- Invalidate or refresh the relevant captures when material assignment, material parameters, textures, geometry, or relevant transforms change.
-- Use the existing render proxy and material uniform-expression mechanisms. Do not build a separate parameter binding system.
-- Capture resolution/card count must be bounded and scalable. Provide coverage/quality diagnostics so missing coverage is visible rather than silently returning black or stale values.
-- Avoid view-dependent material capture assumptions. Expressions such as Camera Position, Pixel Depth, screen-space SceneTexture, and pixel derivatives may not have stable view-independent values. Define capture-view semantics and document limitations. Do not claim exact equivalence for these expressions.
+## Consumer responsibilities
 
-## Consumer behavior
+### RT Shadows
+- Generate visibility rays from the receiving surface toward the light.
+- Opaque accepted hits terminate visibility; do not fetch full material properties for opaque occlusion.
+- Masked hits consult cached opacity/coverage.
+- Translucent transmission is a separate later feature.
 
-### Software RT shadows
+### RT GI
+- Generate diffuse rays using the receiving normal and sampling policy.
+- Fetch cached surface properties at accepted hits.
+- Accumulate indirect radiance with its own temporal/spatial reconstruction.
 
-- Opaque geometry should remain opaque in traversal and should not require a material lookup for every hit.
-- Masked geometry needs cached opacity/coverage to accept or reject candidate hits. Keep this path as cheap as possible.
-- Translucent shadows are a separate transmission problem; do not treat opacity mask as translucency.
+### RT Reflections
+- Generate specular rays from view direction, normal, and roughness.
+- Trace the same scene BVH, including off-screen geometry.
+- Fetch cached surface properties and evaluate the reflection lighting/transport.
+- Use its own roughness filtering and temporal/spatial reconstruction.
+- SSR is not a required fallback. Sky/Reflection Captures may be used for misses or unsupported cache coverage, but must not be confused with a successful scene hit.
 
-### Software RT GI and reflections
+## Performance policy
 
-- Query cached Base Color, Normal, Roughness, Metallic, Specular, Emissive, and AO only when the consumer needs them.
-- Reuse the same cache data across DDGI, reflections, and other consumers.
-- A cache lookup is an approximation of the original material at the capture resolution and card coverage. It is not exact per-triangle hit shading.
+- One shared geometry representation and one shared material cache.
+- Build static BLAS once; update only dirty dynamic geometry and instance data.
+- Bound per-frame build/refit and cache-capture work.
+- Start with configurable internal resolution and ray budgets per effect; do not hard-code a universal half-resolution assumption.
+- Keep shadow visibility cheap; only GI/reflections need full surface shading data.
+- Batch/cohere rays where practical, compact active rays, and avoid unnecessary material fetches.
+- Reuse hit results only when ray, scene version, and required hit semantics are genuinely equivalent. Do not force unsafe cross-effect reuse.
+- Track BVH memory/build/refit time, rays, traversal steps, hit/miss rates, surface-cache coverage/misses, and denoising cost.
 
-### WPO and deformation
+## UE4.27 integration sequence
 
-- WPO changes geometry, not just surface shading. The geometry representation used by the software tracer must account for the deformation or explicitly document that WPO is unsupported. Updating material captures alone cannot fix incorrect intersections.
-- Dynamic/skinned/deforming geometry needs a bounded refresh strategy and may require lower capture resolution or fewer cards.
+1. Audit and integrate with Renderer scene/primitive lifecycle. The core must receive primitive add, remove, transform, geometry-change, and material-change notifications.
+2. Add the shared Software RT Core scene data and GPU buffer/resource lifecycle.
+3. Implement and validate triangle BVH build, refit, and traversal independently of any effect.
+4. Add automatic surface capture and stable hit-to-cache mapping.
+5. Add a minimal debug consumer that visualizes hit distance, instance/triangle identity, normals, and cache coverage.
+6. Connect RT Shadows, GI/DDGI, and Reflections as separate consumers.
+7. Add temporal reconstruction and per-effect scalability only after correctness is established.
 
-## Memory and performance policy
+## First acceptance tests
 
-The primary cost moves from **per-ray full graph execution** to **bounded cache storage and incremental capture updates**.
+- Static triangle scene: exact expected hit/miss and distance.
+- Two instances sharing one BLAS: distinct transforms, shared geometry.
+- Moving instance: TLAS update without BLAS rebuild.
+- Dynamic geometry: only affected BLAS updates.
+- Material Instance: scalar/vector/texture overrides appear in the capture.
+- Masked foliage: transparent texels reject hits.
+- Off-screen object: reflection ray can hit it.
+- One scene and one surface cache can be queried by all three consumers without duplicate scene/capture ownership.
 
-The implementation must:
-- Allocate cache storage only for primitives represented by the software RT scene.
-- Share captures across all software RT consumers.
-- Update only dirty/visible/relevant captures within a per-frame budget.
-- Support streaming/eviction for large scenes.
-- Avoid one independent material cache per effect.
-- Keep atlas sampling compact and coherent.
-- Expose stats for allocated texels, card coverage, update work, misses, and stale entries.
+## Explicit non-goals
 
-This trades exactness for predictable cost. It is the correct default for a performance-oriented software RT path. A high-quality direct graph evaluation path is not the baseline.
+- Reimplementing DXR or claiming DXR-equivalent performance.
+- Executing the complete Material Graph per ray.
+- Making SSR a required component.
+- Using SDF/voxels as the sole general-purpose geometry representation.
+- Three independent BVHs or material caches.
+- Requiring artists to opt materials or meshes into software RT.
 
-## UE4.27 implementation direction
-
-1. Audit the existing renderer infrastructure for mesh capture, scene capture, render targets, primitive scene info, mesh draw commands, and texture atlas allocation. Reuse existing mechanisms where possible; do not assume UE5 Lumen code exists in UE4.27.
-2. Add an Engine/Renderer-owned surface-cache manager and resource lifecycle, independent of any RT consumer.
-3. Add automatic card/coverage generation from existing primitive/mesh bounds and surface geometry. The first milestone may use a conservative fixed card layout per primitive, then improve placement/coverage.
-4. Render each card through the normal material raster path into cache targets. Ensure Material Instances resolve through their normal render proxies.
-5. Add a small, stable lookup API that takes primitive identity plus hit position/normal (or an explicit cache address) and returns the cache UV/texel. The consumer remains responsible for producing valid hit data.
-6. Add sampling helpers for consumers and a debug visualization for coverage/misses.
-7. Only after the cache works independently, connect DDGI, software shadows, and software reflections.
-
-## First validation
-
-- A textured opaque material is captured and sampled correctly.
-- A Material Instance with scalar/vector/texture overrides produces the expected cached values.
-- A masked foliage material stores coverage and can reject transparent regions.
-- A dynamic material parameter change invalidates and refreshes only affected captures.
-- A moving/deforming primitive follows the documented update path.
-- Card/atlas coverage visualization exposes uncovered regions.
-- Two independent consumers can sample the same cache without duplicate capture work.
-
-## Important limitations
-
-- Surface captures approximate material output at finite resolution and limited directions.
-- Camera/view-dependent expressions may not have a stable capture result.
-- Thin geometry, complex concave meshes, and poor card coverage can cause misses or leakage.
-- Translucency requires a separate representation/transport model.
-- WPO/skinning must be reflected in the geometry representation as well as cache updates.
-
-## Superseded proposals
-
-- patches/01-software-rt-material-usage.md must not be applied: no per-material usage flag.
-- patches/02-material-compute-shader-registration.md must not be applied: full graph compute evaluation per hit is not the selected fast path.
-- The earlier direct ray-hit Material Graph evaluation contract is superseded by this cache-first architecture.
-
-This document is an architecture decision, not a claim that the runtime cache has been implemented or compiled.
+This is an architecture and integration contract. It is not a claim that the runtime core, BVH, cache, or effects have already been implemented or compiled.
