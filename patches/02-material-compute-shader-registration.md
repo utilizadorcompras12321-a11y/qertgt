@@ -18,13 +18,13 @@ diff --git a/Engine/Source/Runtime/Engine/Public/MaterialShared.h b/Engine/Sourc
 +	CompiledMP_BaseColorCS,
  	CompiledMP_MAX
  };
-@@ -3179,6 +3179,7 @@ struct FMaterialShaderParameters
+@@ -3182,4 +3182,5 @@ struct FMaterialShaderParameters
  			uint64 bIsUsedWithVirtualHeightfieldMesh : 1;
  			uint64 bIsStencilTestEnabled : 1;
 +			uint64 bIsUsedWithSoftwareRayTracing : 1;
  		};
  	};
-@@ -3238,4 +3238,5 @@ struct FMaterialShaderParameters
+@@ -3240,4 +3240,5 @@ struct FMaterialShaderParameters
  		bIsUsedWithVirtualHeightfieldMesh = InMaterial->IsUsedWithVirtualHeightfieldMesh();
  		bIsStencilTestEnabled = InMaterial->IsStencilTestEnabled();
 +		bIsUsedWithSoftwareRayTracing = InMaterial->IsUsedWithSoftwareRayTracing();
