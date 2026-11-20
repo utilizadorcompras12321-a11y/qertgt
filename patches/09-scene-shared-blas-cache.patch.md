@@ -8,7 +8,7 @@ Status: proposed integration diff; not applied to a full UE4.27.2 checkout or co
 - Uses FSoftwareRTGeometryKey, not a bare LOD-resource pointer.
 - The key includes LOD identity, position/index CPU-storage addresses, vertex/index counts and a section signature.
 - A static-mesh update explicitly invalidates the complete BLAS cache. This prevents stale BLAS data when a resource is rebuilt in place and retains the same descriptor address.
-- Failed geometry exports do not create cache entries and are retried on the next scene synchronization.
+- Failed geometry exports do not create cache entries. They are retried after the next scene/resource invalidation; they do not trigger a busy retry loop.
 - Removed resources are pruned after the current primitive set is scanned.
 
 ## Diff
@@ -108,5 +108,5 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/PrimitiveSceneInfo.cpp b/Eng
 - Transform-only updates do not invalidate the BLAS cache; they rebuild only the TLAS.
 - This still uses LOD 0 for the initial controlled test. It is not render-exact for views selecting other LODs.
 - Geometry-key pointer fields are never dereferenced by the cache. They are identity tokens only.
-- The cache is currently built synchronously during scene synchronization. This is correctness-first prototype behavior, not production scheduling.
+- The cache is currently built synchronously during scene synchronization. This is correctness-first prototype behavior, not production scheduling. Failed exports remain unsupported until a subsequent scene/resource invalidation triggers another build attempt.
 - This patch requires 04, 06, 07 and 08. It is not compile-tested.
