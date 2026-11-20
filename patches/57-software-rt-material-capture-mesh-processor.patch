@@ -35,7 +35,7 @@ index 9999999..aaaaaaa 100644
  			&& FMeshMaterialShader::ShouldCompilePermutation(Parameters);
  	}
  
-@@ -85,7 +90,151 @@
+@@ -85,7 +91,151 @@
  	IMPLEMENT_MATERIAL_SHADER_TYPE(
  		,
  		FSoftwareRTMaterialCapturePS,
