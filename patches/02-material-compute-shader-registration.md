@@ -18,13 +18,13 @@ diff --git a/Engine/Source/Runtime/Engine/Public/MaterialShared.h b/Engine/Sourc
 +	CompiledMP_BaseColorCS,
  	CompiledMP_MAX
  };
-@@ -3165,6 +3166,7 @@ struct FMaterialShaderParameters
+@@ -3179,6 +3179,7 @@ struct FMaterialShaderParameters
  			uint64 bIsUsedWithVirtualHeightfieldMesh : 1;
  			uint64 bIsStencilTestEnabled : 1;
 +			uint64 bIsUsedWithSoftwareRayTracing : 1;
  		};
  	};
-@@ -3240,6 +3242,7 @@ struct FMaterialShaderParameters
+@@ -3238,4 +3238,5 @@ struct FMaterialShaderParameters
  		bIsUsedWithVirtualHeightfieldMesh = InMaterial->IsUsedWithVirtualHeightfieldMesh();
  		bIsStencilTestEnabled = InMaterial->IsStencilTestEnabled();
 +		bIsUsedWithSoftwareRayTracing = InMaterial->IsUsedWithSoftwareRayTracing();
@@ -82,7 +82,7 @@ diff --git a/Engine/Source/Runtime/Engine/Private/Materials/HLSLMaterialTranslat
 diff --git a/Engine/Shaders/Private/MaterialTemplate.ush b/Engine/Shaders/Private/MaterialTemplate.ush
 --- a/Engine/Shaders/Private/MaterialTemplate.ush
 +++ b/Engine/Shaders/Private/MaterialTemplate.ush
-@@ -2091,6 +2091,11 @@ half3 GetMaterialEmissiveForCS(FMaterialPixelParameters Parameters)
+@@ -2088,5 +2088,10 @@ half3 GetMaterialEmissiveForCS(FMaterialPixelParameters Parameters)
  {
  %s;
  }
