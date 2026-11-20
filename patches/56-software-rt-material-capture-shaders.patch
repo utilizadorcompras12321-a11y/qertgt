@@ -1,9 +1,98 @@
 diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
-new file mode 100644
-index 0000000..9999999
---- /dev/null
+index 0000000..9999999 100644
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
-@@ -0,0 +1,90 @@
+@@ -1,90 +1,91 @@
+-// Copyright Epic Games, Inc. All Rights Reserved.
+-
+-#include "MaterialShared.h"
+-#include "MaterialShader.h"
+-#include "MeshMaterialShader.h"
+-#include "SoftwareRTCaptureVertexFactory.h"
+-
+-namespace SoftwareRTMaterialCapture
+-{
+-	static bool ShouldCompile(const FMeshMaterialShaderPermutationParameters& Parameters)
+-	{
+-		const FMaterialShaderParameters& Material = Parameters.MaterialParameters;
+-
+-		return Material.bIsUsedWithSoftwareRTCapture
+-			&& Material.MaterialDomain == MD_Surface
+-			&& Material.BlendMode == BLEND_Opaque
+-			&& Material.TessellationMode == MTM_NoTessellation
+-			&& !Material.bHasVertexPositionOffsetConnected
+-			&& !Material.bHasPixelDepthOffsetConnected
+-			&& Parameters.VertexFactoryType == &FSoftwareRTCaptureVertexFactory::StaticType
+-			&& FMeshMaterialShader::ShouldCompilePermutation(Parameters);
+-	}
+-
+-	class FSoftwareRTMaterialCaptureVS : public FMeshMaterialShader
+-	{
+-	public:
+-		DECLARE_SHADER_TYPE(FSoftwareRTMaterialCaptureVS, MeshMaterial);
+-
+-		static bool ShouldCompilePermutation(const FMeshMaterialShaderPermutationParameters& Parameters)
+-		{
+-			return SoftwareRTMaterialCapture::ShouldCompile(Parameters);
+-		}
+-
+-		static void ModifyCompilationEnvironment(
+-			const FMaterialShaderPermutationParameters& Parameters,
+-			FShaderCompilerEnvironment& OutEnvironment)
+-		{
+-			FMeshMaterialShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+-			OutEnvironment.SetDefine(TEXT("SOFTWARE_RT_MATERIAL_CAPTURE"), 1);
+-		}
+-
+-		FSoftwareRTMaterialCaptureVS() = default;
+-		FSoftwareRTMaterialCaptureVS(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
+-			: FMeshMaterialShader(Initializer)
+-		{
+-		}
+-	};
+-
+-	class FSoftwareRTMaterialCapturePS : public FMeshMaterialShader
+-	{
+-	public:
+-		DECLARE_SHADER_TYPE(FSoftwareRTMaterialCapturePS, MeshMaterial);
+-
+-		static bool ShouldCompilePermutation(const FMeshMaterialShaderPermutationParameters& Parameters)
+-		{
+-			return SoftwareRTMaterialCapture::ShouldCompile(Parameters);
+-		}
+-
+-		static void ModifyCompilationEnvironment(
+-			const FMaterialShaderPermutationParameters& Parameters,
+-			FShaderCompilerEnvironment& OutEnvironment)
+-		{
+-			FMeshMaterialShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+-			OutEnvironment.SetDefine(TEXT("SOFTWARE_RT_MATERIAL_CAPTURE"), 1);
+-			OutEnvironment.SetRenderTargetOutputFormat(0, PF_FloatRGBA);
+-			OutEnvironment.SetRenderTargetOutputFormat(1, PF_FloatRGBA);
+-			OutEnvironment.SetRenderTargetOutputFormat(2, PF_FloatRGBA);
+-		}
+-
+-		FSoftwareRTMaterialCapturePS() = default;
+-		FSoftwareRTMaterialCapturePS(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
+-			: FMeshMaterialShader(Initializer)
+-		{
+-		}
+-	};
+-
+-	IMPLEMENT_MATERIAL_SHADER_TYPE(
+-		,
+-		FSoftwareRTMaterialCaptureVS,
+-		TEXT("/Engine/Private/SoftwareRTMaterialCapture.usf"),
+-		TEXT("MainVS"),
+-		SF_Vertex);
+-
+-	IMPLEMENT_MATERIAL_SHADER_TYPE(
+-		,
+-		FSoftwareRTMaterialCapturePS,
+-		TEXT("/Engine/Private/SoftwareRTMaterialCapture.usf"),
+-		TEXT("MainPS"),
+-		SF_Pixel);
+-}
 +// Copyright Epic Games, Inc. All Rights Reserved.
 +
 +#include "MaterialShared.h"
@@ -23,6 +112,7 @@ index 0000000..9999999
 +			&& Material.TessellationMode == MTM_NoTessellation
 +			&& !Material.bHasVertexPositionOffsetConnected
 +			&& !Material.bHasPixelDepthOffsetConnected
++			&& !Material.bMaterialMayModifyMeshPosition
 +			&& Parameters.VertexFactoryType == &FSoftwareRTCaptureVertexFactory::StaticType
 +			&& FMeshMaterialShader::ShouldCompilePermutation(Parameters);
 +	}
@@ -95,11 +185,91 @@ index 0000000..9999999
 +		SF_Pixel);
 +}
 diff --git a/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf b/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf
-new file mode 100644
-index 0000000..9999999
---- /dev/null
+index 0000000..9999999 100644
+--- a/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf
 +++ b/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf
-@@ -0,0 +1,81 @@
+@@ -1,81 +1,79 @@
+-// Copyright Epic Games, Inc. All Rights Reserved.
+-
+-// Material evaluation for the Software RT Surface Cache.
+-// SV_POSITION is chart/atlas space. Original translated world position and
+-// material interpolants travel independently and are used for material inputs.
+-
+-#include "Common.ush"
+-#include "/Engine/Generated/Material.ush"
+-#include "/Engine/Generated/VertexFactory.ush"
+-
+-struct FSoftwareRTCaptureVSOutput
+-{
+-	FVertexFactoryInterpolantsVSToPS FactoryInterpolants;
+-	float3 TranslatedWorldPosition : TEXCOORD15;
+-	float4 Position : SV_POSITION;
+-};
+-
+-FSoftwareRTCaptureVSOutput MainVS(FVertexFactoryInput Input)
+-{
+-	FSoftwareRTCaptureVSOutput Output;
+-
+-	FVertexFactoryIntermediates VFIntermediates = GetVertexFactoryIntermediates(Input);
+-	float4 WorldPosition = VertexFactoryGetWorldPosition(Input, VFIntermediates);
+-	float3x3 TangentToLocal = VertexFactoryGetTangentToLocal(Input, VFIntermediates);
+-	FMaterialVertexParameters VertexParameters = GetMaterialVertexParameters(
+-		Input,
+-		VFIntermediates,
+-		WorldPosition.xyz,
+-		TangentToLocal);
+-
+-	Output.Position = SoftwareRTGetChartClipPosition(Input);
+-	Output.TranslatedWorldPosition = WorldPosition.xyz;
+-	Output.FactoryInterpolants = VertexFactoryGetInterpolantsVSToPS(
+-		Input,
+-		VFIntermediates,
+-		VertexParameters);
+-
+-	return Output;
+-}
+-
+-void FPixelShaderInOut_MainPS(
+-	in FVertexFactoryInterpolantsVSToPS Interpolants,
+-	inout FPixelShaderIn In,
+-	inout FPixelShaderOut Out)
+-{
+-	ResolvedView = ResolveView();
+-
+-	FMaterialPixelParameters MaterialParameters = GetMaterialPixelParameters(
+-		Interpolants,
+-		In.SvPosition);
+-
+-	FPixelMaterialInputs PixelMaterialInputs;
+-	const float4 ChartScreenPosition = 0;
+-	const float3 TranslatedWorldPosition = Interpolants.TranslatedWorldPosition;
+-	CalcMaterialParametersEx(
+-		MaterialParameters,
+-		PixelMaterialInputs,
+-		In.SvPosition,
+-		ChartScreenPosition,
+-		In.bIsFrontFace,
+-		TranslatedWorldPosition,
+-		TranslatedWorldPosition);
+-
+-	const half3 BaseColor = GetMaterialBaseColor(PixelMaterialInputs);
+-	const half Roughness = GetMaterialRoughness(PixelMaterialInputs);
+-	const half Metallic = GetMaterialMetallic(PixelMaterialInputs);
+-	const half Specular = GetMaterialSpecular(PixelMaterialInputs);
+-	const half3 Emissive = GetMaterialEmissive(PixelMaterialInputs);
+-	const float3 WorldNormal = normalize(MaterialParameters.WorldNormal);
+-
+-	Out.MRT[0] = float4(BaseColor, Roughness);
+-	Out.MRT[1] = float4(WorldNormal * 0.5f + 0.5f, Metallic);
+-	Out.MRT[2] = float4(Emissive, Specular);
+-}
+-
+-#define PIXELSHADEROUTPUT_INTERPOLANTS 1
+-#define PIXELSHADEROUTPUT_MRT0 1
+-#define PIXELSHADEROUTPUT_MRT1 1
+-#define PIXELSHADEROUTPUT_MRT2 1
+-
+-#include "PixelShaderOutputCommon.ush"
 +// Copyright Epic Games, Inc. All Rights Reserved.
 +
 +// Material evaluation for the Software RT Surface Cache.
@@ -113,7 +283,6 @@ index 0000000..9999999
 +struct FSoftwareRTCaptureVSOutput
 +{
 +	FVertexFactoryInterpolantsVSToPS FactoryInterpolants;
-+	float3 TranslatedWorldPosition : TEXCOORD15;
 +	float4 Position : SV_POSITION;
 +};
 +
@@ -131,7 +300,6 @@ index 0000000..9999999
 +		TangentToLocal);
 +
 +	Output.Position = SoftwareRTGetChartClipPosition(Input);
-+	Output.TranslatedWorldPosition = WorldPosition.xyz;
 +	Output.FactoryInterpolants = VertexFactoryGetInterpolantsVSToPS(
 +		Input,
 +		VFIntermediates,
@@ -181,3 +349,466 @@ index 0000000..9999999
 +#define PIXELSHADEROUTPUT_MRT2 1
 +
 +#include "PixelShaderOutputCommon.ush"
+diff --git a/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush b/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
+index 0000000..9999999 100644
+--- a/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
++++ b/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
+@@ -1,225 +1,225 @@
+-// Copyright Epic Games, Inc. All Rights Reserved.
+-
+-#include "VertexFactoryCommon.ush"
+-
+-// The input declaration in C++ uses attribute slots 0..8. Four UV sets are
+-// intentionally the current hard limit of this capture vertex layout.
+-struct FVertexFactoryInput
+-{
+-	float4 Position      : ATTRIBUTE0;
+-	float4 TangentX      : ATTRIBUTE1;
+-	float4 TangentZ      : ATTRIBUTE2;
+-	float2 TexCoords[4]  : ATTRIBUTE3;
+-	float4 ChartPosition : ATTRIBUTE7;
+-	float4 Color         : ATTRIBUTE8;
+-	uint InstanceId      : SV_InstanceID;
+-};
+-
+-struct FVertexFactoryIntermediates
+-{
+-	float3 LocalPosition;
+-	half3x3 TangentToLocal;
+-	half3x3 TangentToWorld;
+-	half TangentToWorldSign;
+-	half4 Color;
+-	uint PrimitiveId;
+-};
+-
+-struct FVertexFactoryInterpolantsVSToPS
+-{
+-#if INTERPOLATE_VERTEX_COLOR
+-	half4 Color : COLOR0;
+-#endif
+-
+-#if NUM_TEX_COORD_INTERPOLATORS
+-	float2 TexCoords[NUM_TEX_COORD_INTERPOLATORS] : TEXCOORD0;
+-#endif
+-
+-#if INSTANCED_STEREO
+-	nointerpolation uint EyeIndex : PACKED_EYE_INDEX;
+-#endif
+-
+-	TANGENTTOWORLD_INTERPOLATOR_BLOCK
+-	float3 TranslatedWorldPosition : TEXCOORD12;
+-};
+-
+-float4 SoftwareRTGetChartClipPosition(FVertexFactoryInput Input)
+-{
+-	return Input.ChartPosition;
+-}
+-
+-half3x3 SoftwareRTCalcTangentToLocal(FVertexFactoryInput Input)
+-{
+-	half3 TangentX = normalize((half3)Input.TangentX.xyz);
+-	half4 TangentZ = (half4)Input.TangentZ;
+-	TangentZ.xyz = normalize(TangentZ.xyz);
+-
+-	half3 TangentY = cross(TangentZ.xyz, TangentX) * TangentZ.w;
+-	half3x3 Result;
+-	Result[0] = cross(TangentY, TangentZ.xyz) * TangentZ.w;
+-	Result[1] = TangentY;
+-	Result[2] = TangentZ.xyz;
+-	return Result;
+-}
+-
+-FVertexFactoryIntermediates GetVertexFactoryIntermediates(FVertexFactoryInput Input)
+-{
+-	FVertexFactoryIntermediates Result;
+-	Result.PrimitiveId = 0;
+-	Result.LocalPosition = Input.Position.xyz;
+-	Result.Color = (half4)Input.Color;
+-	Result.TangentToLocal = SoftwareRTCalcTangentToLocal(Input);
+-
+-	half3x3 LocalToWorld = GetLocalToWorld3x3(Result.PrimitiveId);
+-	half3 InvScale = GetPrimitiveData(Result.PrimitiveId).InvNonUniformScaleAndDeterminantSign.xyz;
+-	LocalToWorld[0] *= InvScale.x;
+-	LocalToWorld[1] *= InvScale.y;
+-	LocalToWorld[2] *= InvScale.z;
+-
+-	Result.TangentToWorld = mul(Result.TangentToLocal, LocalToWorld);
+-	Result.TangentToWorldSign = Input.TangentZ.w *
+-		GetPrimitiveData(Result.PrimitiveId).InvNonUniformScaleAndDeterminantSign.w;
+-	return Result;
+-}
+-
+-float4 VertexFactoryGetWorldPosition(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates)
+-{
+-	return TransformLocalToTranslatedWorld(Intermediates.LocalPosition, Intermediates.PrimitiveId);
+-}
+-
+-// The chart clip coordinate is stored separately but is not consumed by the
+-// regular material vertex path. A dedicated capture VS must write it to
+-// SV_POSITION; feeding it through this hook would incorrectly apply the view
+-// projection matrix a second time.
+-float4 VertexFactoryGetRasterizedWorldPosition(
+-	FVertexFactoryInput Input,
+-	FVertexFactoryIntermediates Intermediates,
+-	float4 TranslatedWorldPosition)
+-{
+-	return TranslatedWorldPosition;
+-}
+-
+-float3 VertexFactoryGetPositionForVertexLighting(
+-	FVertexFactoryInput Input,
+-	FVertexFactoryIntermediates Intermediates,
+-	float3 TranslatedWorldPosition)
+-{
+-	return TranslatedWorldPosition;
+-}
+-
+-half3x3 VertexFactoryGetTangentToLocal(
+-	FVertexFactoryInput Input,
+-	FVertexFactoryIntermediates Intermediates)
+-{
+-	return Intermediates.TangentToLocal;
+-}
+-
+-float3 VertexFactoryGetWorldNormal(
+-	FVertexFactoryInput Input,
+-	FVertexFactoryIntermediates Intermediates)
+-{
+-	return normalize(Intermediates.TangentToWorld[2]);
+-}
+-
+-FMaterialVertexParameters GetMaterialVertexParameters(
+-	FVertexFactoryInput Input,
+-	FVertexFactoryIntermediates Intermediates,
+-	float3 WorldPosition,
+-	half3x3 TangentToLocal)
+-{
+-	FMaterialVertexParameters Result = (FMaterialVertexParameters)0;
+-	Result.WorldPosition = WorldPosition;
+-	Result.VertexColor = Intermediates.Color;
+-	Result.TangentToWorld = Intermediates.TangentToWorld;
+-	Result.PrevFrameLocalToWorld = GetPrimitiveData(Intermediates.PrimitiveId).PreviousLocalToWorld;
+-	Result.PreSkinnedPosition = Intermediates.LocalPosition;
+-	Result.PreSkinnedNormal = TangentToLocal[2];
+-
+-#if NUM_MATERIAL_TEXCOORDS_VERTEX
+-	UNROLL
+-	for (int CoordinateIndex = 0; CoordinateIndex < NUM_MATERIAL_TEXCOORDS_VERTEX; ++CoordinateIndex)
+-	{
+-		Result.TexCoords[CoordinateIndex] = Input.TexCoords[min(CoordinateIndex, 3)];
+-	}
+-#endif
+-	return Result;
+-}
+-
+-FVertexFactoryInterpolantsVSToPS VertexFactoryGetInterpolantsVSToPS(
+-	FVertexFactoryInput Input,
+-	FVertexFactoryIntermediates Intermediates,
+-	FMaterialVertexParameters VertexParameters)
+-{
+-	FVertexFactoryInterpolantsVSToPS Interpolants = (FVertexFactoryInterpolantsVSToPS)0;
+-
+-#if NUM_TEX_COORD_INTERPOLATORS
+-	UNROLL
+-	for (int CoordinateIndex = 0; CoordinateIndex < NUM_TEX_COORD_INTERPOLATORS; ++CoordinateIndex)
+-	{
+-		Interpolants.TexCoords[CoordinateIndex] = Input.TexCoords[min(CoordinateIndex, 3)];
+-	}
+-#endif
+-
+-#if INTERPOLATE_VERTEX_COLOR
+-	Interpolants.Color = Intermediates.Color;
+-#endif
+-
+-	Interpolants.TranslatedWorldPosition = VertexParameters.WorldPosition;
+-	Interpolants.TangentToWorld0 = float4(Intermediates.TangentToWorld[0], 0);
+-	Interpolants.TangentToWorld2 = float4(
+-		Intermediates.TangentToWorld[2],
+-		Intermediates.TangentToWorldSign);
+-
+-#if INSTANCED_STEREO
+-	Interpolants.EyeIndex = 0;
+-#endif
+-	return Interpolants;
+-}
+-
+-FMaterialPixelParameters GetMaterialPixelParameters(
+-	FVertexFactoryInterpolantsVSToPS Interpolants,
+-	float4 SvPosition)
+-{
+-	FMaterialPixelParameters Result = MakeInitializedMaterialPixelParameters();
+-
+-#if NUM_TEX_COORD_INTERPOLATORS
+-	UNROLL
+-	for (int CoordinateIndex = 0; CoordinateIndex < NUM_TEX_COORD_INTERPOLATORS; ++CoordinateIndex)
+-	{
+-		Result.TexCoords[CoordinateIndex] = Interpolants.TexCoords[CoordinateIndex];
+-	}
+-#endif
+-
+-	Result.TangentToWorld = AssembleTangentToWorld(
+-		Interpolants.TangentToWorld0.xyz,
+-		Interpolants.TangentToWorld2);
+-	Result.UnMirrored = Interpolants.TangentToWorld2.w;
+-
+-#if INTERPOLATE_VERTEX_COLOR
+-	Result.VertexColor = Interpolants.Color;
+-#else
+-	Result.VertexColor = 0;
+-#endif
+-
+-	Result.TwoSidedSign = 1;
+-	return Result;
+-}
+-
+-float4 VertexFactoryGetPreviousWorldPosition(
+-	FVertexFactoryInput Input,
+-	FVertexFactoryIntermediates Intermediates)
+-{
+-	return VertexFactoryGetWorldPosition(Input, Intermediates);
+-}
+-
+-float4 VertexFactoryGetTranslatedPrimitiveVolumeBounds(FVertexFactoryInterpolantsVSToPS Interpolants)
+-{
+-	return 0;
+-}
+-
+-#if INSTANCED_STEREO
+-uint VertexFactoryGetEyeIndex(uint InstanceId)
+-{
+-	return 0;
+-}
+-#endif
++// Copyright Epic Games, Inc. All Rights Reserved.
++
++#include "VertexFactoryCommon.ush"
++
++// The input declaration in C++ uses attribute slots 0..8. Four UV sets are
++// intentionally the current hard limit of this capture vertex layout.
++struct FVertexFactoryInput
++{
++	float4 Position      : ATTRIBUTE0;
++	float4 TangentX      : ATTRIBUTE1;
++	float4 TangentZ      : ATTRIBUTE2;
++	float2 TexCoords[4]  : ATTRIBUTE3;
++	float4 ChartPosition : ATTRIBUTE7;
++	float4 Color         : ATTRIBUTE8;
++	uint InstanceId      : SV_InstanceID;
++};
++
++struct FVertexFactoryIntermediates
++{
++	float3 LocalPosition;
++	half3x3 TangentToLocal;
++	half3x3 TangentToWorld;
++	half TangentToWorldSign;
++	half4 Color;
++	uint PrimitiveId;
++};
++
++struct FVertexFactoryInterpolantsVSToPS
++{
++#if INTERPOLATE_VERTEX_COLOR
++	half4 Color : COLOR0;
++#endif
++
++#if NUM_TEX_COORD_INTERPOLATORS
++	float2 TexCoords[NUM_TEX_COORD_INTERPOLATORS] : TEXCOORD0;
++#endif
++
++#if INSTANCED_STEREO
++	nointerpolation uint EyeIndex : PACKED_EYE_INDEX;
++#endif
++
++	TANGENTTOWORLD_INTERPOLATOR_BLOCK
++	float3 TranslatedWorldPosition : TEXCOORD12;
++};
++
++float4 SoftwareRTGetChartClipPosition(FVertexFactoryInput Input)
++{
++	return Input.ChartPosition;
++}
++
++half3x3 SoftwareRTCalcTangentToLocal(FVertexFactoryInput Input)
++{
++	half3 TangentX = normalize((half3)Input.TangentX.xyz);
++	half4 TangentZ = (half4)Input.TangentZ;
++	TangentZ.xyz = normalize(TangentZ.xyz);
++
++	half3 TangentY = cross(TangentZ.xyz, TangentX) * TangentZ.w;
++	half3x3 Result;
++	Result[0] = cross(TangentY, TangentZ.xyz) * TangentZ.w;
++	Result[1] = TangentY;
++	Result[2] = TangentZ.xyz;
++	return Result;
++}
++
++FVertexFactoryIntermediates GetVertexFactoryIntermediates(FVertexFactoryInput Input)
++{
++	FVertexFactoryIntermediates Result;
++	Result.PrimitiveId = 0;
++	Result.LocalPosition = Input.Position.xyz;
++	Result.Color = (half4)Input.Color;
++	Result.TangentToLocal = SoftwareRTCalcTangentToLocal(Input);
++
++	half3x3 LocalToWorld = GetLocalToWorld3x3(Result.PrimitiveId);
++	half3 InvScale = GetPrimitiveData(Result.PrimitiveId).InvNonUniformScaleAndDeterminantSign.xyz;
++	LocalToWorld[0] *= InvScale.x;
++	LocalToWorld[1] *= InvScale.y;
++	LocalToWorld[2] *= InvScale.z;
++
++	Result.TangentToWorld = mul(Result.TangentToLocal, LocalToWorld);
++	Result.TangentToWorldSign = Input.TangentZ.w *
++		GetPrimitiveData(Result.PrimitiveId).InvNonUniformScaleAndDeterminantSign.w;
++	return Result;
++}
++
++float4 VertexFactoryGetWorldPosition(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates)
++{
++	return TransformLocalToTranslatedWorld(Intermediates.LocalPosition, Intermediates.PrimitiveId);
++}
++
++// The chart clip coordinate is stored separately but is not consumed by the
++// regular material vertex path. A dedicated capture VS must write it to
++// SV_POSITION; feeding it through this hook would incorrectly apply the view
++// projection matrix a second time.
++float4 VertexFactoryGetRasterizedWorldPosition(
++	FVertexFactoryInput Input,
++	FVertexFactoryIntermediates Intermediates,
++	float4 TranslatedWorldPosition)
++{
++	return TranslatedWorldPosition;
++}
++
++float3 VertexFactoryGetPositionForVertexLighting(
++	FVertexFactoryInput Input,
++	FVertexFactoryIntermediates Intermediates,
++	float3 TranslatedWorldPosition)
++{
++	return TranslatedWorldPosition;
++}
++
++half3x3 VertexFactoryGetTangentToLocal(
++	FVertexFactoryInput Input,
++	FVertexFactoryIntermediates Intermediates)
++{
++	return Intermediates.TangentToLocal;
++}
++
++float3 VertexFactoryGetWorldNormal(
++	FVertexFactoryInput Input,
++	FVertexFactoryIntermediates Intermediates)
++{
++	return normalize(Intermediates.TangentToWorld[2]);
++}
++
++FMaterialVertexParameters GetMaterialVertexParameters(
++	FVertexFactoryInput Input,
++	FVertexFactoryIntermediates Intermediates,
++	float3 WorldPosition,
++	half3x3 TangentToLocal)
++{
++	FMaterialVertexParameters Result = (FMaterialVertexParameters)0;
++	Result.WorldPosition = WorldPosition;
++	Result.VertexColor = Intermediates.Color;
++	Result.TangentToWorld = Intermediates.TangentToWorld;
++	Result.PrevFrameLocalToWorld = GetPrimitiveData(Intermediates.PrimitiveId).PreviousLocalToWorld;
++	Result.PreSkinnedPosition = Intermediates.LocalPosition;
++	Result.PreSkinnedNormal = TangentToLocal[2];
++
++#if NUM_MATERIAL_TEXCOORDS_VERTEX
++	UNROLL
++	for (int CoordinateIndex = 0; CoordinateIndex < NUM_MATERIAL_TEXCOORDS_VERTEX; ++CoordinateIndex)
++	{
++		Result.TexCoords[CoordinateIndex] = Input.TexCoords[min(CoordinateIndex, 3)];
++	}
++#endif
++	return Result;
++}
++
++FVertexFactoryInterpolantsVSToPS VertexFactoryGetInterpolantsVSToPS(
++	FVertexFactoryInput Input,
++	FVertexFactoryIntermediates Intermediates,
++	FMaterialVertexParameters VertexParameters)
++{
++	FVertexFactoryInterpolantsVSToPS Interpolants = (FVertexFactoryInterpolantsVSToPS)0;
++
++#if NUM_TEX_COORD_INTERPOLATORS
++	UNROLL
++	for (int CoordinateIndex = 0; CoordinateIndex < NUM_TEX_COORD_INTERPOLATORS; ++CoordinateIndex)
++	{
++		Interpolants.TexCoords[CoordinateIndex] = Input.TexCoords[min(CoordinateIndex, 3)];
++	}
++#endif
++
++#if INTERPOLATE_VERTEX_COLOR
++	Interpolants.Color = Intermediates.Color;
++#endif
++
++	Interpolants.TranslatedWorldPosition = VertexParameters.WorldPosition;
++	Interpolants.TangentToWorld0 = float4(Intermediates.TangentToWorld[0], 0);
++	Interpolants.TangentToWorld2 = float4(
++		Intermediates.TangentToWorld[2],
++		Intermediates.TangentToWorldSign);
++
++#if INSTANCED_STEREO
++	Interpolants.EyeIndex = 0;
++#endif
++	return Interpolants;
++}
++
++FMaterialPixelParameters GetMaterialPixelParameters(
++	FVertexFactoryInterpolantsVSToPS Interpolants,
++	float4 SvPosition)
++{
++	FMaterialPixelParameters Result = MakeInitializedMaterialPixelParameters();
++
++#if NUM_TEX_COORD_INTERPOLATORS
++	UNROLL
++	for (int CoordinateIndex = 0; CoordinateIndex < NUM_TEX_COORD_INTERPOLATORS; ++CoordinateIndex)
++	{
++		Result.TexCoords[CoordinateIndex] = Interpolants.TexCoords[CoordinateIndex];
++	}
++#endif
++
++	Result.TangentToWorld = AssembleTangentToWorld(
++		Interpolants.TangentToWorld0.xyz,
++		Interpolants.TangentToWorld2);
++	Result.UnMirrored = Interpolants.TangentToWorld2.w;
++
++#if INTERPOLATE_VERTEX_COLOR
++	Result.VertexColor = Interpolants.Color;
++#else
++	Result.VertexColor = 0;
++#endif
++
++	Result.TwoSidedSign = 1;
++	return Result;
++}
++
++float4 VertexFactoryGetPreviousWorldPosition(
++	FVertexFactoryInput Input,
++	FVertexFactoryIntermediates Intermediates)
++{
++	return VertexFactoryGetWorldPosition(Input, Intermediates);
++}
++
++float4 VertexFactoryGetTranslatedPrimitiveVolumeBounds(FVertexFactoryInterpolantsVSToPS Interpolants)
++{
++	return 0;
++}
++
++#if INSTANCED_STEREO
++uint VertexFactoryGetEyeIndex(uint InstanceId)
++{
++	return 0;
++}
++#endif
+diff --git a/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush b/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
+index 0000000..9999999 100644
+--- a/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
++++ b/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
+@@ -221,4 +221,6 @@
+ 	TANGENTTOWORLD_INTERPOLATOR_BLOCK
++	float3 TranslatedWorldPosition : TEXCOORD12;
+ };
