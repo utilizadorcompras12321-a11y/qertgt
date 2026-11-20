@@ -2,13 +2,14 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 index 9999999..aaaaaaa 100644
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
-@@ -1,9 +1,12 @@
+@@ -1,9 +1,14 @@
  // Copyright Epic Games, Inc. All Rights Reserved.
  
  #include "MaterialShared.h"
  #include "MaterialShader.h"
  #include "MeshMaterialShader.h"
-#include "PrimitiveUniformShaderParameters.h"
++#include "PrimitiveUniformShaderParameters.h"
++#include "RenderUtils.h"
 +#include "MeshPassProcessor.h"
 +#include "MeshPassProcessor.inl"
  #include "SoftwareRTCaptureVertexFactory.h"
@@ -16,6 +17,24 @@ index 9999999..aaaaaaa 100644
  
  namespace SoftwareRTMaterialCapture
  {
+@@ -10,15 +13,16 @@
+ 	static bool ShouldCompile(const FMeshMaterialShaderPermutationParameters& Parameters)
+ 	{
+ 		const FMaterialShaderParameters& Material = Parameters.MaterialParameters;
+ 
+-		return Material.bIsUsedWithSoftwareRTCapture
++		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5)
++			&& Material.bIsUsedWithSoftwareRTCapture
+ 			&& Material.MaterialDomain == MD_Surface
+ 			&& Material.BlendMode == BLEND_Opaque
+ 			&& Material.TessellationMode == MTM_NoTessellation
+ 			&& !Material.bHasVertexPositionOffsetConnected
+ 			&& !Material.bHasPixelDepthOffsetConnected
+ 			&& !Material.bMaterialMayModifyMeshPosition
+ 			&& Parameters.VertexFactoryType == &FSoftwareRTCaptureVertexFactory::StaticType
+ 			&& FMeshMaterialShader::ShouldCompilePermutation(Parameters);
+ 	}
+ 
 @@ -85,7 +88,148 @@
  	IMPLEMENT_MATERIAL_SHADER_TYPE(
  		,
