@@ -1,8 +1,8 @@
 diff --git a/Engine/Source/Runtime/Engine/Classes/Materials/Material.h b/Engine/Source/Runtime/Engine/Classes/Materials/Material.h
 --- a/Engine/Source/Runtime/Engine/Classes/Materials/Material.h
 +++ b/Engine/Source/Runtime/Engine/Classes/Materials/Material.h
-@@ -650,6 +650,13 @@
- 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Usage)
+@@ -649,8 +649,14 @@
+ 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Usage)
  	uint8 bUsedWithGeometryCache : 1;
  
 +	/**
@@ -25,7 +25,7 @@ diff --git a/Engine/Source/Runtime/Engine/Private/Materials/Material.cpp b/Engin
 +	bUsedWithSoftwareRTCapture = false;
  PRAGMA_DISABLE_DEPRECATION_WARNINGS
  	D3D11TessellationMode = MTM_NoTessellation;
- 	bEnableCrackFreeDisplacement = false;
+ 	 bEnableCrackFreeDisplacement = false;
 diff --git a/Engine/Source/Runtime/Engine/Public/MaterialShared.h b/Engine/Source/Runtime/Engine/Public/MaterialShared.h
 --- a/Engine/Source/Runtime/Engine/Public/MaterialShared.h
 +++ b/Engine/Source/Runtime/Engine/Public/MaterialShared.h
@@ -37,7 +37,7 @@ diff --git a/Engine/Source/Runtime/Engine/Public/MaterialShared.h b/Engine/Sourc
  	virtual bool ShouldGenerateSphericalParticleNormals() const { return false; }
  	virtual bool ShouldDisableDepthTest() const { return false; }
  	virtual bool ShouldWriteOnlyAlpha() const { return false; }
-@@ -2513,6 +2514,7 @@
+@@ -2513,6 +2513,7 @@
  	ENGINE_API virtual bool IsTangentSpaceNormal() const override;
  	ENGINE_API virtual bool ShouldInjectEmissiveIntoLPV() const override;
  	ENGINE_API virtual bool ShouldBlockGI() const override;
@@ -45,22 +45,22 @@ diff --git a/Engine/Source/Runtime/Engine/Public/MaterialShared.h b/Engine/Sourc
  	ENGINE_API virtual bool ShouldGenerateSphericalParticleNormals() const override;
  	ENGINE_API virtual bool ShouldDisableDepthTest() const override;
  	ENGINE_API virtual bool ShouldWriteOnlyAlpha() const override;
-@@ -3182,6 +3184,7 @@
+@@ -3182,4 +3182,5 @@
  			uint64 bIsUsedWithVirtualHeightfieldMesh : 1;
  			uint64 bIsStencilTestEnabled : 1;
 +			uint64 bIsUsedWithSoftwareRTCapture : 1;
  		};
  	};
- 
-@@ -3240,6 +3243,7 @@
+@@ -3240,4 +3240,5 @@
  		bIsUsedWithVirtualHeightfieldMesh = InMaterial->IsUsedWithVirtualHeightfieldMesh();
  		bIsStencilTestEnabled = InMaterial->IsStencilTestEnabled();
 +		bIsUsedWithSoftwareRTCapture = InMaterial->IsUsedWithSoftwareRTCapture();
  	}
+ };
 diff --git a/Engine/Source/Runtime/Engine/Private/Materials/MaterialShared.cpp b/Engine/Source/Runtime/Engine/Private/Materials/MaterialShared.cpp
 --- a/Engine/Source/Runtime/Engine/Private/Materials/MaterialShared.cpp
 +++ b/Engine/Source/Runtime/Engine/Private/Materials/MaterialShared.cpp
-@@ -1187,6 +1187,7 @@
+@@ -1187,7 +1187,8 @@
  EMaterialDomain FMaterialResource::GetMaterialDomain() const { return Material->MaterialDomain; }
  bool FMaterialResource::IsTangentSpaceNormal() const { return Material->bTangentSpaceNormal || (!Material->Normal.IsConnected() && !Material->bUseMaterialAttributes); }
  bool FMaterialResource::ShouldInjectEmissiveIntoLPV() const { return Material->bUseEmissiveForDynamicAreaLighting; }
