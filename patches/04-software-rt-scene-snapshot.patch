@@ -68,4 +68,3 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/PrimitiveSceneInfo.cpp b/Eng
 +	// Mesh resources/elements may have changed. Refresh the snapshot and BLAS
 +	// cache on the next scene synchronization.
 +	Scene->bSoftwareRTSceneDirty = true;
-+	Scene->bSoftwareRTBLASCacheNeedsFullRebuild = true;
