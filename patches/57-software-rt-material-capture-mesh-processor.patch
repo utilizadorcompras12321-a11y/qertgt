@@ -8,6 +8,7 @@ index 9999999..aaaaaaa 100644
  #include "MaterialShared.h"
  #include "MaterialShader.h"
  #include "MeshMaterialShader.h"
+#include "PrimitiveUniformShaderParameters.h"
 +#include "MeshPassProcessor.h"
 +#include "MeshPassProcessor.inl"
  #include "SoftwareRTCaptureVertexFactory.h"
