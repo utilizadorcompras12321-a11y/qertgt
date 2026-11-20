@@ -1,0 +1,54 @@
+# 53 — Software RT Capture VF: Minimal Registration Stub
+
+Status: source patch proposed. It is deliberately **not a functional vertex factory** and has not been applied or compiled in the user's checkout.
+
+Mirror audited: `AlexMercer-MA/UnrealEngine-4.27`, commit `306a7e9f7fb53f14c2cb3bfd3854ad906710a17e`.
+
+## Scope
+
+This patch adds only enough structure to register the new VF type early and keep it inert:
+
+- public VF class declaration in the Engine module;
+- an empty vertex-frequency VF parameter layout;
+- static VF and parameter-type registration;
+- an empty matching `.ush` file so the registered virtual shader path exists during VF shader-file initialization.
+
+The VF's `ShouldCompilePermutation()` deliberately returns false. No material permutations are generated for this stub, and it must not be used for draws.
+
+## Why this is safer than pretending to implement the VF now
+
+The UE4.27 registration macro binds the VF type to static callbacks, including `ShouldCompilePermutation`, `ModifyCompilationEnvironment`, `ValidateCompiledResult`, and `SupportsTessellationShaders`. The base `FVertexFactory` supplies the latter three static defaults, but it does not supply `ShouldCompilePermutation`; the derived class must define it.
+
+The VF type constructor validates the virtual shader filename and the Engine's VF initialization scans registered shader files to build referenced-uniform-buffer metadata. Therefore the matching `.ush` path must exist even while the VF is inert.
+
+The parameter class uses `DECLARE_INLINE_TYPE_LAYOUT`, matching the pattern used by `FVectorFieldVisualizationVertexFactoryShaderParameters` in `VectorFieldVisualization.cpp`. This avoids introducing a separate `IMPLEMENT_TYPE_LAYOUT` declaration for a private, empty parameter class.
+
+## Patch contents
+
+- `Engine/Source/Runtime/Engine/Public/SoftwareRTCaptureVertexFactory.h`
+- `Engine/Source/Runtime/Engine/Private/SoftwareRTCaptureVertexFactory.cpp`
+- `Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush`
+
+## Explicit non-goals
+
+This patch does **not** implement:
+
+- vertex buffers or vertex stream components;
+- a vertex declaration;
+- chart UV input;
+- original UV/tangent/color interpolants;
+- material shader classes or capture permutations;
+- draw submission;
+- any Surface Cache capture.
+
+The empty `InitRHI()` is intentional only for this registration stub. It does not establish a usable draw path. The next patch must replace the stub with the actual vertex stream/declaration ABI and matching HLSL before any mesh can be submitted through it.
+
+## Validation still required
+
+1. Apply the patch to the exact UE4.27.2 source checkout.
+2. Build the Engine/Editor and confirm the new translation unit is included by the existing Engine module build rules.
+3. Start the Editor and confirm VF registration does not trigger the late-registration assertion.
+4. Confirm no shader compile is attempted for this VF while `ShouldCompilePermutation()` returns false.
+5. Do not mark the VF implemented until a real vertex declaration, streams, shader ABI, and one-triangle draw proof exist.
+
+The mirror evidence confirms the registration and parameter-layout patterns, not successful compilation in the user's local fork.
