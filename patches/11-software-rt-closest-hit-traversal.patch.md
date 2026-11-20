@@ -49,7 +49,7 @@ new file mode 100644
 +	static bool TraceClosest(
 +		const FSoftwareRTRay& Ray,
 +		const FSoftwareRTTLAS& TLAS,
-+		const TMap<const void*, FSoftwareRTBLAS>& BLASCache,
++		const TMap<FSoftwareRTGeometryKey, FSoftwareRTBLAS>& BLASCache,
 +		FSoftwareRTHit& OutHit);
 +};
 diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTRayTracer.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTRayTracer.cpp
@@ -228,7 +228,7 @@ new file mode 100644
 +bool FSoftwareRTRayTracer::TraceClosest(
 +	const FSoftwareRTRay& Ray,
 +	const FSoftwareRTTLAS& TLAS,
-+	const TMap<const void*, FSoftwareRTBLAS>& BLASCache,
++	const TMap<FSoftwareRTGeometryKey, FSoftwareRTBLAS>& BLASCache,
 +	FSoftwareRTHit& OutHit)
 +{
 +	OutHit = FSoftwareRTHit();
