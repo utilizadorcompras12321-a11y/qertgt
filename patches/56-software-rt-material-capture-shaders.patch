@@ -169,7 +169,7 @@ index 0000000..9999999
 +	const float3 WorldNormal = normalize(MaterialParameters.WorldNormal);
 +
 +	Out.MRT[0] = float4(BaseColor, Roughness);
-+	Out.MRT[1] = float4(WorldNormal * 0.5f + 0.5f, Metallic);
++	Out.MRT[1] = float4(WorldNormal, Metallic);
 +	Out.MRT[2] = float4(Emissive, Specular);
 +}
 +
