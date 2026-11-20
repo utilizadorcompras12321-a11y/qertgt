@@ -98,7 +98,6 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/PrimitiveSceneInfo.cpp b/Eng
  void FPrimitiveSceneInfo::UpdateStaticMeshes(FRHICommandListImmediate& RHICmdList, FScene* Scene, const TArrayView<FPrimitiveSceneInfo*>& SceneInfos, bool bReAddToDrawLists)
  {
  \tQUICK_SCOPE_CYCLE_COUNTER(STAT_FPrimitiveSceneInfo_UpdateStaticMeshes);
-+\tScene->bSoftwareRTSceneDirty = true;
 +\tScene->bSoftwareRTBLASCacheNeedsFullRebuild = true;
 \`\`\`
 
