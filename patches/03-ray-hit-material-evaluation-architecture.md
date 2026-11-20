@@ -1,129 +1,118 @@
-# Patch 03 — Generic ray-hit material evaluation architecture (supersedes 01/02)
+# Patch 03 — Generic software-RT material representation
 
-Target: UE 4.27.2 source. This is the architecture baseline for the Engine implementation.
+Target: UE 4.27.2 source. This replaces the direct per-ray Material Graph evaluation proposal.
 
-## Status of patches 01 and 02
+## Decision
 
-Patches 01 and 02 are prototypes and MUST NOT be applied as the implementation baseline.
+**Do not execute the complete Unreal Material Graph at every software ray hit.** That is too expensive and is not the normal fast path used by production game renderers.
 
-- Patch 01 introduces a plugin-named usage flag. The final capability must be named and owned by the Engine as a generic material usage, not by DDGI or a plugin.
-- Patch 02 compiles only Base Color and Emissive, then evaluates them with a zero-initialized pixel parameter struct and UV=(0,0). That is not ray-hit material evaluation.
-- Neither patch provides a ray-hit context, reliable texture footprint, visibility evaluation, nor a reusable Engine-side evaluation contract.
+Use an Engine-owned **Software RT Surface Cache**: render/capture material properties through the existing raster material pipeline into a reusable surface representation, then let software RT consumers sample that representation at hit points.
 
-## Goal
+This follows the established Surface Cache approach used by Unreal Lumen: software tracing finds surfaces using a cheaper geometric representation, while material properties are looked up from cached surface captures. Epic documents that Lumen captures material properties from multiple mesh-facing cards and amortizes updates over frames. The same principle is appropriate here, but this implementation must be generic UE4.27 Engine infrastructure and must not depend on Lumen, DDGI, a plugin, or a particular BVH.
 
-Add a native Engine capability that lets any software ray tracing implementation evaluate the original Unreal Material Graph at a ray hit. The Engine owns graph compilation, material shader-map integration, uniform expressions, texture/sampler bindings, and evaluation semantics. DDGI, software shadows, software reflections, and future systems are consumers only.
+## Requirements
 
-No dependency on DDGI, a BVH implementation, a plugin module, or a particular ray tracing algorithm is permitted in Runtime/Engine or Runtime/Renderer.
+- Every supported regular Material and Material Instance participates automatically. **No user-facing checkbox, per-material opt-in, special material asset, or manual authoring step.**
+- The original Material Graph remains the source of truth. The cache is populated by rendering the original material through the normal raster material pipeline, not by maintaining a second graph or a hand-authored simplified material.
+- Material Instances must capture their resolved scalar/vector/texture parameters and overrides.
+- The cache is generic Engine/Renderer infrastructure. DDGI, software RT shadows, software RT reflections, and future consumers can read it.
+- Consumers own their tracing structures and hit generation. The cache API must not assume a BVH, SDF, voxel grid, or DDGI data structure.
+- Do not add a compute shader variant for full Material Graph evaluation as the primary path. Compute graph evaluation may be reconsidered only for a narrowly justified fallback or feature.
 
-## Runtime contract
+## Surface representation
 
-The public contract is conceptually:
+Use a set of surface captures/cards per renderable mesh or primitive, with a GPU-resident atlas or equivalent cache storage. Each capture stores the material outputs needed by RT consumers, initially:
 
-```cpp
-enum class EMaterialRayHitEvaluation : uint8
-{
-    Visibility,  // Opacity Mask / two-sided visibility decisions
-    Surface,     // Base Color, Metallic, Specular, Roughness, Normal, Tangent
-    FullSurface  // Surface + Emissive, AO, and other supported surface outputs
-};
+- Base Color
+- World/Shading Normal (and/or a reconstructible tangent-space normal representation)
+- Roughness
+- Metallic
+- Specular
+- Emissive
+- Ambient Occlusion
+- Opacity Mask / coverage for masked materials
 
-struct FMaterialRayHitContext
-{
-    FVector3f WorldPosition;
-    FVector3f GeometricNormal;
-    FVector3f ShadingNormal;
-    FVector3f WorldTangent;
-    FVector3f WorldBitangent;
-    FVector3f RayDirection;
-    FVector4f VertexColor;
-    FVector2f TexCoords[/* engine-supported material UV count */];
-    FVector2f TexCoordDDX[/* same count */];
-    FVector2f TexCoordDDY[/* same count */];
-    float TwoSidedSign;
-};
-```
+The exact packing and formats must be selected against UE4.27 RHI capabilities and memory budgets. Avoid storing duplicate channels and avoid assuming FP16 is required for every property.
 
-This is a contract sketch, not a committed C++ ABI. The exact UE4.27 types, UV storage, alignment, serialization, and shader parameter transport must be verified before defining the final public struct.
+A hit must resolve to a cache address using stable surface coordinates supplied by the consumer. For a card-based representation, this requires a mapping from the hit primitive/local surface position to the selected card and atlas UV. If the consumer only has a voxel/SDF hit without enough surface coordinates, the cache lookup contract must explicitly define how the surface point is projected to a card; do not invent UVs.
 
-The hit context must be supplied by the consumer because the Engine cannot infer triangle attributes, barycentrics, UVs, or ray differentials without knowing the consumer's geometry representation. The Engine must not own a BVH or assume one particular acceleration structure.
+## Capture and update policy
 
-## Material evaluation semantics
+- Populate captures using the existing raster material rendering path so normal material expressions, texture sampling, and Material Instance parameters work without a compute material interpreter.
+- Generate card placement and capture resources automatically from renderable geometry; do not require artists to mark materials or meshes.
+- Static content should be captured once and retained until geometry/material state changes.
+- Dynamic or changing content must update incrementally/amortized across frames, not force all captures to rerender every frame.
+- Invalidate or refresh the relevant captures when material assignment, material parameters, textures, geometry, or relevant transforms change.
+- Use the existing render proxy and material uniform-expression mechanisms. Do not build a separate parameter binding system.
+- Capture resolution/card count must be bounded and scalable. Provide coverage/quality diagnostics so missing coverage is visible rather than silently returning black or stale values.
+- Avoid view-dependent material capture assumptions. Expressions such as Camera Position, Pixel Depth, screen-space SceneTexture, and pixel derivatives may not have stable view-independent values. Define capture-view semantics and document limitations. Do not claim exact equivalence for these expressions.
 
-1. Evaluate the original graph, not a duplicate material or a reduced graph authored by the user.
-2. Reuse the material's shader map and uniform-expression set. Material Instance scalar/vector/texture parameters must resolve through the existing render proxy and uniform-expression cache.
-3. Convert the ray-hit context into the material evaluation parameter structure. Do not call `MakeInitializedMaterialPixelParameters()` and leave its geometry fields at zero.
-4. Keep visibility evaluation separate from full surface evaluation. A masked hit must be rejectable without evaluating Base Color, Normal, Roughness, and Emissive.
-5. Texture samples must use explicit ray-hit UV gradients/footprints for mip selection. Compute-shader DDX/DDY returning zero is not a valid fallback for ray hits.
-6. Keep pixel/view-only expressions explicit. Where a graph node fundamentally requires raster pixel derivatives, scene textures, or unavailable per-view state, compilation must report a clear unsupported-context error or use a documented caller-supplied view context. Never silently substitute fabricated values.
-7. WPO is a geometry/acceleration-structure concern: evaluating WPO after an intersection cannot repair a hit against un-deformed geometry. It must be handled by the geometry producer or explicitly marked unsupported for a given consumer.
-8. Translucency is not equivalent to Opacity Mask. It requires a separate transmission/accumulation contract and is not part of the first visibility milestone.
+## Consumer behavior
 
-## Shader compilation and caching
+### Software RT shadows
 
-The compute material variant must be part of the normal material shader-map lifecycle and cache identity. The profile (Visibility, Surface, FullSurface) must participate in the permutation/cache key. Material Instances must reuse the base material's compiled graph while binding their own uniform-expression values.
+- Opaque geometry should remain opaque in traversal and should not require a material lookup for every hit.
+- Masked geometry needs cached opacity/coverage to accept or reject candidate hits. Keep this path as cheap as possible.
+- Translucent shadows are a separate transmission problem; do not treat opacity mask as translucency.
 
-Do not blindly compile every profile for every material. The Engine needs an explicit, generic eligibility/request mechanism. A generic material usage capability is acceptable if it follows existing UE material usage conventions, but it must not mention software RT consumers by name and must not force all projects to compile every compute variant. The exact mechanism must be settled against the existing shader-map compilation flow before adding a UPROPERTY or a custom shader-map side cache.
+### Software RT GI and reflections
 
-Important source facts already verified in the UE4.27.2 dump:
+- Query cached Base Color, Normal, Roughness, Metallic, Specular, Emissive, and AO only when the consumer needs them.
+- Reuse the same cache data across DDGI, reflections, and other consumers.
+- A cache lookup is an approximation of the original material at the capture resolution and card coverage. It is not exact per-triangle hit shading.
 
-- `FHLSLMaterialTranslator::Translate()` currently sets `bCompileForComputeShader = Material->IsLightFunction()`.
-- Compute translation currently compiles only `CompiledMP_EmissiveColorCS`.
-- `FHLSLMaterialTranslator::TextureSample()` forces every non-pixel sample to `TMVM_MipLevel`, disables automatic view mip bias, and defaults a missing mip input to zero.
-- `DDX()` and `DDY()` return zero for `SF_Compute`.
-- `FMaterialPixelParameters` contains geometry, view, and pixel-specific members. A ray-hit adapter must initialize every member that the selected profile can read; using the zero initializer alone is invalid.
-- `FMaterialShader::SetParameters()` already binds the material uniform buffer and parameter collection buffers from the render proxy's uniform-expression cache. It currently requires an `FSceneView`; view-independent and view-dependent evaluation need to be distinguished rather than bypassing uniform expressions.
-- `FMaterialShaderType` supports `SF_Compute`, and material shader types are registered in the material shader map. The existing `FMaterialShaders::Shaders[SF_NumGraphicsFrequencies]` arrays are graphics-only, so the compute shader must use the generic material shader-type lookup path, not be forced into those arrays.
+### WPO and deformation
 
-## Implementation sequence
+- WPO changes geometry, not just surface shading. The geometry representation used by the software tracer must account for the deformation or explicitly document that WPO is unsupported. Updating material captures alone cannot fix incorrect intersections.
+- Dynamic/skinned/deforming geometry needs a bounded refresh strategy and may require lower capture resolution or fewer cards.
 
-### 1. Compiler contract
-- Introduce a generic ray-hit compute compilation mode, distinct from the existing Light Function compute mode.
-- Compile the requested material properties into compute-frequency functions.
-- Make the requested evaluation profile part of the material shader permutation/cache identity.
-- Preserve existing Light Function behavior and its current generated entrypoint.
+## Memory and performance policy
 
-### 2. Hit-context adapter
-- Define the HLSL ray-hit context and a conversion routine that populates the material parameter structure used by existing generated graph code.
-- Populate world position, geometric/shading normal, tangent basis, camera/ray vectors where available, vertex color, UVs, two-sided sign, and explicit texture gradients.
-- Do not pretend scene textures, screen coordinates, or pixel derivatives exist in a ray hit.
+The primary cost moves from **per-ray full graph execution** to **bounded cache storage and incremental capture updates**.
 
-### 3. Texture footprint
-- Add a compute ray-hit texture-sampling path that consumes explicit gradients.
-- Do not globally change existing compute material sampling semantics, since Light Functions and other compute users may rely on mip-level behavior.
-- Audit 2D, cube, array, volume, virtual, external, and custom sampler paths; initially support only paths whose semantics can be implemented correctly and issue compile errors for the rest.
+The implementation must:
+- Allocate cache storage only for primitives represented by the software RT scene.
+- Share captures across all software RT consumers.
+- Update only dirty/visible/relevant captures within a per-frame budget.
+- Support streaming/eviction for large scenes.
+- Avoid one independent material cache per effect.
+- Keep atlas sampling compact and coherent.
+- Expose stats for allocated texels, card coverage, update work, misses, and stale entries.
 
-### 4. Engine evaluation interface
-- Provide a generic Engine/Renderer material evaluation entry point taking a material render proxy, material resource, hit context, profile, and destination/output representation.
-- Bind material uniform expressions through the existing material shader machinery. Do not reimplement parameter collection or texture parameter binding in a plugin.
-- Keep GPU dispatch scheduling and hit-buffer layout owned by the consumer; the Engine API should not assume a BVH or a particular ray batching strategy.
+This trades exactness for predictable cost. It is the correct default for a performance-oriented software RT path. A high-quality direct graph evaluation path is not the baseline.
 
-### 5. First validation
-A small test must demonstrate all of the following before integrating DDGI:
-- A material with a texture sample evaluates the expected texel at supplied UVs and gradients.
-- A Material Instance returns its overridden scalar/vector/texture parameter values.
-- A masked material correctly rejects/accepts hits through the Visibility profile.
-- Surface and FullSurface profiles return the expected outputs.
-- A graph using unsupported pixel-only expressions fails clearly rather than returning plausible but incorrect values.
+## UE4.27 implementation direction
 
-## Non-goals for the first milestone
+1. Audit the existing renderer infrastructure for mesh capture, scene capture, render targets, primitive scene info, mesh draw commands, and texture atlas allocation. Reuse existing mechanisms where possible; do not assume UE5 Lumen code exists in UE4.27.
+2. Add an Engine/Renderer-owned surface-cache manager and resource lifecycle, independent of any RT consumer.
+3. Add automatic card/coverage generation from existing primitive/mesh bounds and surface geometry. The first milestone may use a conservative fixed card layout per primitive, then improve placement/coverage.
+4. Render each card through the normal material raster path into cache targets. Ensure Material Instances resolve through their normal render proxies.
+5. Add a small, stable lookup API that takes primitive identity plus hit position/normal (or an explicit cache address) and returns the cache UV/texel. The consumer remains responsible for producing valid hit data.
+6. Add sampling helpers for consumers and a debug visualization for coverage/misses.
+7. Only after the cache works independently, connect DDGI, software shadows, and software reflections.
 
-- Implementing or owning a BVH.
-- Building a new material editor or a parallel material asset format.
-- Rewriting the Material Graph as a runtime interpreter.
-- Supporting translucent multi-hit transport.
-- Claiming arbitrary Material Expression compatibility before an expression-by-expression audit.
-- Integrating DDGI, shadows, or reflections before the Engine contract is validated.
+## First validation
 
-## Files already inspected
+- A textured opaque material is captured and sampled correctly.
+- A Material Instance with scalar/vector/texture overrides produces the expected cached values.
+- A masked foliage material stores coverage and can reject transparent regions.
+- A dynamic material parameter change invalidates and refreshes only affected captures.
+- A moving/deforming primitive follows the documented update path.
+- Card/atlas coverage visualization exposes uncovered regions.
+- Two independent consumers can sample the same cache without duplicate capture work.
 
-- `MaterialShared.h/.cpp`
-- `HLSLMaterialTranslator.cpp`
-- `MaterialTemplate.ush`
-- `MaterialShader.h`
-- `MaterialShaderType.h`
-- `MaterialShader.cpp`
-- `ShaderBaseClasses.cpp`
-- `MaterialInstance.h/.cpp`
+## Important limitations
 
-This document is the architecture baseline only. It does not claim that the runtime interface or shader implementation has been applied or compiled.
+- Surface captures approximate material output at finite resolution and limited directions.
+- Camera/view-dependent expressions may not have a stable capture result.
+- Thin geometry, complex concave meshes, and poor card coverage can cause misses or leakage.
+- Translucency requires a separate representation/transport model.
+- WPO/skinning must be reflected in the geometry representation as well as cache updates.
+
+## Superseded proposals
+
+- patches/01-software-rt-material-usage.md must not be applied: no per-material usage flag.
+- patches/02-material-compute-shader-registration.md must not be applied: full graph compute evaluation per hit is not the selected fast path.
+- The earlier direct ray-hit Material Graph evaluation contract is superseded by this cache-first architecture.
+
+This document is an architecture decision, not a claim that the runtime cache has been implemented or compiled.
