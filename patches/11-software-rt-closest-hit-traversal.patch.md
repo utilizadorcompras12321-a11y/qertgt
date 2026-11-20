@@ -181,7 +181,7 @@ new file mode 100644
 +
 +		while (Stack.Num() > 0)
 +		{
-+			const int32 NodeIndex = Stack.Pop(EAllowShrinking::No);
++			const int32 NodeIndex = Stack.Pop(false);
 +			if (!BLAS.Nodes.IsValidIndex(NodeIndex))
 +			{
 +				continue;
@@ -244,7 +244,7 @@ new file mode 100644
 +
 +	while (Stack.Num() > 0)
 +	{
-+		const int32 NodeIndex = Stack.Pop(EAllowShrinking::No);
++		const int32 NodeIndex = Stack.Pop(false);
 +		if (!TLAS.Nodes.IsValidIndex(NodeIndex))
 +		{
 +			continue;
