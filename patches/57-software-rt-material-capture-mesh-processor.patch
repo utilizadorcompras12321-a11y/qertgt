@@ -16,7 +16,7 @@ index 9999999..aaaaaaa 100644
  
  namespace SoftwareRTMaterialCapture
  {
-@@ -85,7 +88,147 @@
+@@ -85,7 +88,148 @@
  	IMPLEMENT_MATERIAL_SHADER_TYPE(
  		,
  		FSoftwareRTMaterialCapturePS,
@@ -73,6 +73,7 @@ index 9999999..aaaaaaa 100644
 +
 +				const FMeshBatchElement& Element = MeshBatch.Elements[ElementIndex];
 +				if (Element.PrimitiveIdMode != PrimID_ForceZero
++					|| Element.PrimitiveUniformBuffer != nullptr
 +					|| Element.PrimitiveUniformBufferResource != &GIdentityPrimitiveUniformBuffer)
 +				{
 +					return;
