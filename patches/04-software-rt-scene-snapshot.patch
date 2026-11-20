@@ -1,11 +1,10 @@
 diff --git a/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h b/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h
 --- a/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h
 +++ b/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h
-@@
- class FScene : public FSceneInterface
+@@ -2443,6 +2443,20 @@ class FScene : public FSceneInterface
  {
  public:
-+
+ 
 +	/**
 +	 * Render-thread snapshot consumed by the shared Software RT scene builder.
 +	 * Proxy pointers are valid only while their primitive remains in FScene.
@@ -19,7 +18,11 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h b/Engine/Sour
 +		FMatrix LocalToWorld;
 +		FBoxSphereBounds WorldBounds;
 +	};
-@@
++
+ 	/** An optional world associated with the scene. */
+ 	UWorld* World;
+@@ -2473,6 +2487,10 @@ class FScene : public FSceneInterface
+ 	TArray<FMatrix> PrimitiveTransforms;
  	/** Packed array of primitive scene proxies in the scene. */
  	TArray<FPrimitiveSceneProxy*> PrimitiveSceneProxies;
 +	/** Stable-at-sync-point view of the current primitives for Software RT consumers. */
@@ -31,46 +34,36 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/ScenePrivate.h b/Engine/Sour
 diff --git a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp b/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
 --- a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp
-@@
- void FScene::AddPrimitiveSceneInfo_RenderThread(FPrimitiveSceneInfo* PrimitiveSceneInfo, const TOptional<FTransform>& PreviousTransform)
- {
- 	check(IsInRenderingThread());
+@@ -848,6 +848,7 @@ void FScene::AddPrimitiveSceneInfo_RenderThread(FPrimitiveSceneInfo* PrimitiveSceneInfo, const TOptional<FTransform>& PreviousTransform)
  	check(PrimitiveSceneInfo->PackedIndex == INDEX_NONE);
  	check(!AddedPrimitiveSceneInfos.Contains(PrimitiveSceneInfo));
  	AddedPrimitiveSceneInfos.Add(PrimitiveSceneInfo);
 +	bSoftwareRTSceneDirty = true;
  	if (PreviousTransform.IsSet())
-@@
- void FScene::UpdatePrimitiveTransform_RenderThread(FPrimitiveSceneProxy* PrimitiveSceneProxy, const FBoxSphereBounds& WorldBounds, const FBoxSphereBounds& LocalBounds, const FMatrix& LocalToWorld, const FVector& AttachmentRootPosition, const TOptional<FTransform>& PreviousTransform)
- {
- 	check(IsInRenderingThread());
-@@
+@@ -1304,6 +1305,7 @@ void FScene::UpdatePrimitiveTransform_RenderThread(FPrimitiveSceneProxy* PrimitiveSceneProxy, const FBoxSphereBounds& WorldBounds, const FBoxSphereBounds& LocalBounds, const FMatrix& LocalToWorld, const FVector& AttachmentRootPosition, const TOptional<FTransform>& PreviousTransform)
+ 
  	check(!RemovedPrimitiveSceneInfos.Contains(PrimitiveSceneProxy->GetPrimitiveSceneInfo()));
  	UpdatedTransforms.Add(PrimitiveSceneProxy, { WorldBounds, LocalBounds, LocalToWorld, AttachmentRootPosition });
 +	bSoftwareRTSceneDirty = true;
-@@
- void FScene::RemovePrimitiveSceneInfo_RenderThread(FPrimitiveSceneInfo* PrimitiveSceneInfo)
+ 
+ 	if (PreviousTransform.IsSet())
+@@ -1514,6 +1516,7 @@ void FScene::RemovePrimitiveSceneInfo_RenderThread(FPrimitiveSceneInfo* PrimitiveSceneInfo)
  {
  	check(IsInRenderingThread());
 +	bSoftwareRTSceneDirty = true;
  
  	if (AddedPrimitiveSceneInfos.Remove(PrimitiveSceneInfo))
-@@
- void FScene::ApplyWorldOffset_RenderThread(const FVector& InOffset)
- {
- 	QUICK_SCOPE_CYCLE_COUNTER(STAT_SceneApplyWorldOffset);
+@@ -3532,6 +3535,7 @@ void FScene::ApplyWorldOffset_RenderThread(const FVector& InOffset)
  	SCOPED_NAMED_EVENT(FScene_ApplyWorldOffset_RenderThread, FColor::Yellow);
  	
  	GPUScene.bUpdateAllPrimitives = true;
 +	bSoftwareRTSceneDirty = true;
-@@
- 	{
- 		SCOPED_NAMED_EVENT(FScene_DeletePrimitiveSceneInfo, FColor::Red);
- 		for (FPrimitiveSceneInfo* PrimitiveSceneInfo : DeletedSceneInfos)
-@@
+ 
+ 	// Primitives
+@@ -4309,6 +4313,27 @@ void FScene::UpdateAllPrimitiveSceneInfos(FRHICommandListImmediate& RHICmdList, bool bAsyncCreateLPIs)
  		}
  	}
-+
+ 
 +	// Synchronize Software RT only after additions, removals, transform updates,
 +	// packed-array swaps, and deferred scene-info deletion have all completed.
 +	// This gives downstream BLAS/TLAS and material-cache builders one coherent
@@ -93,5 +86,5 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/RendererScene.cpp b/Engine/S
 +		}
 +		bSoftwareRTSceneDirty = false;
 +	}
- 
++
  	UpdatedAttachmentRoots.Reset();
