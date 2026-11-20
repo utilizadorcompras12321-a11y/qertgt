@@ -1,7 +1,7 @@
 diff --git a/Engine/Source/Runtime/Engine/Classes/Materials/Material.h b/Engine/Source/Runtime/Engine/Classes/Materials/Material.h
 --- a/Engine/Source/Runtime/Engine/Classes/Materials/Material.h
 +++ b/Engine/Source/Runtime/Engine/Classes/Materials/Material.h
-@@ -24808,6 +24808,13 @@
+@@ -650,6 +650,13 @@
  	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Usage)
  	uint8 bUsedWithGeometryCache : 1;
  
@@ -18,7 +18,7 @@ diff --git a/Engine/Source/Runtime/Engine/Classes/Materials/Material.h b/Engine/
 diff --git a/Engine/Source/Runtime/Engine/Private/Materials/Material.cpp b/Engine/Source/Runtime/Engine/Private/Materials/Material.cpp
 --- a/Engine/Source/Runtime/Engine/Private/Materials/Material.cpp
 +++ b/Engine/Source/Runtime/Engine/Private/Materials/Material.cpp
-@@ -32540,6 +32540,7 @@
+@@ -932,6 +932,7 @@
  	OpacityMaskClipValue = 0.3333f;
  	bCastDynamicShadowAsMasked = false;
  	bUsedWithStaticLighting = false;
@@ -29,7 +29,7 @@ diff --git a/Engine/Source/Runtime/Engine/Private/Materials/Material.cpp b/Engin
 diff --git a/Engine/Source/Runtime/Engine/Public/MaterialShared.h b/Engine/Source/Runtime/Engine/Public/MaterialShared.h
 --- a/Engine/Source/Runtime/Engine/Public/MaterialShared.h
 +++ b/Engine/Source/Runtime/Engine/Public/MaterialShared.h
-@@ -64790,6 +64790,7 @@
+@@ -1652,6 +1652,7 @@
  	virtual bool IsTangentSpaceNormal() const { return false; }
  	virtual bool ShouldInjectEmissiveIntoLPV() const { return false; }
  	virtual bool ShouldBlockGI() const { return false; }
@@ -37,7 +37,7 @@ diff --git a/Engine/Source/Runtime/Engine/Public/MaterialShared.h b/Engine/Sourc
  	virtual bool ShouldGenerateSphericalParticleNormals() const { return false; }
  	virtual bool ShouldDisableDepthTest() const { return false; }
  	virtual bool ShouldWriteOnlyAlpha() const { return false; }
-@@ -105220,6 +105221,7 @@
+@@ -2513,6 +2514,7 @@
  	ENGINE_API virtual bool IsTangentSpaceNormal() const override;
  	ENGINE_API virtual bool ShouldInjectEmissiveIntoLPV() const override;
  	ENGINE_API virtual bool ShouldBlockGI() const override;
@@ -45,14 +45,14 @@ diff --git a/Engine/Source/Runtime/Engine/Public/MaterialShared.h b/Engine/Sourc
  	ENGINE_API virtual bool ShouldGenerateSphericalParticleNormals() const override;
  	ENGINE_API virtual bool ShouldDisableDepthTest() const override;
  	ENGINE_API virtual bool ShouldWriteOnlyAlpha() const override;
-@@ -132165,6 +132167,7 @@
+@@ -3182,6 +3184,7 @@
  			uint64 bIsUsedWithVirtualHeightfieldMesh : 1;
  			uint64 bIsStencilTestEnabled : 1;
 +			uint64 bIsUsedWithSoftwareRTCapture : 1;
  		};
  	};
  
-@@ -132225,6 +132228,7 @@
+@@ -3240,6 +3243,7 @@
  		bIsUsedWithVirtualHeightfieldMesh = InMaterial->IsUsedWithVirtualHeightfieldMesh();
  		bIsStencilTestEnabled = InMaterial->IsStencilTestEnabled();
 +		bIsUsedWithSoftwareRTCapture = InMaterial->IsUsedWithSoftwareRTCapture();
@@ -60,7 +60,7 @@ diff --git a/Engine/Source/Runtime/Engine/Public/MaterialShared.h b/Engine/Sourc
 diff --git a/Engine/Source/Runtime/Engine/Private/Materials/MaterialShared.cpp b/Engine/Source/Runtime/Engine/Private/Materials/MaterialShared.cpp
 --- a/Engine/Source/Runtime/Engine/Private/Materials/MaterialShared.cpp
 +++ b/Engine/Source/Runtime/Engine/Private/Materials/MaterialShared.cpp
-@@ -34768,6 +34768,7 @@
+@@ -1187,6 +1187,7 @@
  EMaterialDomain FMaterialResource::GetMaterialDomain() const { return Material->MaterialDomain; }
  bool FMaterialResource::IsTangentSpaceNormal() const { return Material->bTangentSpaceNormal || (!Material->Normal.IsConnected() && !Material->bUseMaterialAttributes); }
  bool FMaterialResource::ShouldInjectEmissiveIntoLPV() const { return Material->bUseEmissiveForDynamicAreaLighting; }
