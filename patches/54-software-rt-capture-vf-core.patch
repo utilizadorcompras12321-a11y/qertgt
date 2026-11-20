@@ -1,25 +1,47 @@
 diff --git a/Engine/Source/Runtime/Engine/Public/SoftwareRTCaptureVertexFactory.h b/Engine/Source/Runtime/Engine/Public/SoftwareRTCaptureVertexFactory.h
-index 1111111..4444444 100644
+index 0000000..9999999 100644
 --- a/Engine/Source/Runtime/Engine/Public/SoftwareRTCaptureVertexFactory.h
 +++ b/Engine/Source/Runtime/Engine/Public/SoftwareRTCaptureVertexFactory.h
-@@ -1,23 +1,66 @@
- // Copyright Epic Games, Inc. All Rights Reserved.
- 
- #pragma once
- 
-+#include "CoreMinimal.h"
- #include "VertexFactory.h"
- 
- /**
+@@ -1,24 +1,50 @@
+-// Copyright Epic Games, Inc. All Rights Reserved.
+-
+-#pragma once
+-
+-#include "VertexFactory.h"
+-
+-/**
 - * Initial, inert registration stub for the Software RT capture vertex factory.
 - * It must not be used for drawing until its vertex streams and declaration exist.
+- */
+-class ENGINE_API FSoftwareRTCaptureVertexFactory : public FVertexFactory
+-{
+-	DECLARE_VERTEX_FACTORY_TYPE(FSoftwareRTCaptureVertexFactory);
+-
+-public:
+-	explicit FSoftwareRTCaptureVertexFactory(ERHIFeatureLevel::Type InFeatureLevel)
+-		: FVertexFactory(InFeatureLevel)
+-	{
+-	}
+-
+-	static bool ShouldCompilePermutation(const FVertexFactoryShaderPermutationParameters& Parameters);
+-
+-	virtual void InitRHI() override;
+-};
++// Copyright Epic Games, Inc. All Rights Reserved.
++
++#pragma once
++
++#include "CoreMinimal.h"
++#include "VertexFactory.h"
++
++/**
 + * Expanded per-triangle vertex layout used by Software RT chart capture.
 + *
 + * Position/Tangent/UV/Color remain in the original mesh domain.
 + * ChartPosition is an independent clip-space position used only by the
 + * dedicated capture vertex shader. It must not replace Position when
 + * evaluating the original material.
-  */
++ */
 +struct FSoftwareRTCaptureVertex
 +{
 +	FVector4 Position;
@@ -30,16 +52,16 @@ index 1111111..4444444 100644
 +	FColor Color;
 +};
 +
- class ENGINE_API FSoftwareRTCaptureVertexFactory : public FVertexFactory
- {
- 	DECLARE_VERTEX_FACTORY_TYPE(FSoftwareRTCaptureVertexFactory);
- 
- public:
- 	explicit FSoftwareRTCaptureVertexFactory(ERHIFeatureLevel::Type InFeatureLevel)
- 		: FVertexFactory(InFeatureLevel)
- 	{
- 	}
- 
++class ENGINE_API FSoftwareRTCaptureVertexFactory : public FVertexFactory
++{
++	DECLARE_VERTEX_FACTORY_TYPE(FSoftwareRTCaptureVertexFactory);
++
++public:
++	explicit FSoftwareRTCaptureVertexFactory(ERHIFeatureLevel::Type InFeatureLevel)
++		: FVertexFactory(InFeatureLevel)
++	{
++	}
++
 +	/**
 +	 * Set the expanded capture vertex buffer.
 +	 * The caller owns the buffer and must retain it until this VF has been
@@ -48,39 +70,69 @@ index 1111111..4444444 100644
 +	 */
 +	void SetData(const FVertexBuffer* InVertexBuffer);
 +
- 	static bool ShouldCompilePermutation(const FVertexFactoryShaderPermutationParameters& Parameters);
- 
- 	virtual void InitRHI() override;
++	static bool ShouldCompilePermutation(const FVertexFactoryShaderPermutationParameters& Parameters);
++
++	virtual void InitRHI() override;
 +
 +private:
 +	const FVertexBuffer* VertexBuffer = nullptr;
- };
++};
 diff --git a/Engine/Source/Runtime/Engine/Private/SoftwareRTCaptureVertexFactory.cpp b/Engine/Source/Runtime/Engine/Private/SoftwareRTCaptureVertexFactory.cpp
-index 2222222..5555555 100644
+index 0000000..9999999 100644
 --- a/Engine/Source/Runtime/Engine/Private/SoftwareRTCaptureVertexFactory.cpp
 +++ b/Engine/Source/Runtime/Engine/Private/SoftwareRTCaptureVertexFactory.cpp
-@@ -1,29 +1,88 @@
- // Copyright Epic Games, Inc. All Rights Reserved.
- 
- #include "SoftwareRTCaptureVertexFactory.h"
-+#include "MaterialShared.h"
- 
+@@ -1,34 +1,72 @@
+-// Copyright Epic Games, Inc. All Rights Reserved.
+-
+-#include "SoftwareRTCaptureVertexFactory.h"
+-
 -/**
 - * No VF-specific bindings are required by the inert registration stub.
 - * The real capture ABI will add its own stream and uniform parameters.
 - */
+-class FSoftwareRTCaptureVertexFactoryShaderParameters : public FVertexFactoryShaderParameters
+-{
+-	DECLARE_INLINE_TYPE_LAYOUT(FSoftwareRTCaptureVertexFactoryShaderParameters, NonVirtual);
+-};
+-
+-IMPLEMENT_VERTEX_FACTORY_PARAMETER_TYPE(
+-	FSoftwareRTCaptureVertexFactory,
+-	SF_Vertex,
+-	FSoftwareRTCaptureVertexFactoryShaderParameters);
+-
+-bool FSoftwareRTCaptureVertexFactory::ShouldCompilePermutation(
+-	const FVertexFactoryShaderPermutationParameters& Parameters)
+-{
+-	// Keep the type registered but prevent material permutations until the ABI exists.
+-	return false;
+-}
+-
+-void FSoftwareRTCaptureVertexFactory::InitRHI()
+-{
+-	// Intentionally empty: this stub has no vertex declaration or streams.
+-}
+-
+-IMPLEMENT_VERTEX_FACTORY_TYPE_EX(
+-	FSoftwareRTCaptureVertexFactory,
+-	"/Engine/Private/SoftwareRTCaptureVertexFactory.ush",
+-	true, false, false, false, false, false, false);
++// Copyright Epic Games, Inc. All Rights Reserved.
++
++#include "SoftwareRTCaptureVertexFactory.h"
++#include "MaterialShared.h"
++
 +// No additional uniform parameters are required: all capture attributes are
 +// carried by the expanded vertex stream.
- class FSoftwareRTCaptureVertexFactoryShaderParameters : public FVertexFactoryShaderParameters
- {
- 	DECLARE_INLINE_TYPE_LAYOUT(FSoftwareRTCaptureVertexFactoryShaderParameters, NonVirtual);
- };
- 
- IMPLEMENT_VERTEX_FACTORY_PARAMETER_TYPE(
- 	FSoftwareRTCaptureVertexFactory,
- 	SF_Vertex,
- 	FSoftwareRTCaptureVertexFactoryShaderParameters);
- 
++class FSoftwareRTCaptureVertexFactoryShaderParameters : public FVertexFactoryShaderParameters
++{
++	DECLARE_INLINE_TYPE_LAYOUT(FSoftwareRTCaptureVertexFactoryShaderParameters, NonVirtual);
++};
++
++IMPLEMENT_VERTEX_FACTORY_PARAMETER_TYPE(
++	FSoftwareRTCaptureVertexFactory,
++	SF_Vertex,
++	FSoftwareRTCaptureVertexFactoryShaderParameters);
++
 +void FSoftwareRTCaptureVertexFactory::SetData(const FVertexBuffer* InVertexBuffer)
 +{
 +	check(IsInRenderingThread());
@@ -91,18 +143,15 @@ index 2222222..5555555 100644
 +	UpdateRHI();
 +}
 +
- bool FSoftwareRTCaptureVertexFactory::ShouldCompilePermutation(
- 	const FVertexFactoryShaderPermutationParameters& Parameters)
- {
--	// Keep the type registered but prevent material permutations until the ABI exists.
--	return false;
++bool FSoftwareRTCaptureVertexFactory::ShouldCompilePermutation(
++	const FVertexFactoryShaderPermutationParameters& Parameters)
++{
 +	// The material opt-in bit is introduced by Patch 50.
 +	return Parameters.MaterialParameters.bIsUsedWithSoftwareRTCapture;
- }
- 
- void FSoftwareRTCaptureVertexFactory::InitRHI()
- {
--	// Intentionally empty: this stub has no vertex declaration or streams.
++}
++
++void FSoftwareRTCaptureVertexFactory::InitRHI()
++{
 +	check(VertexBuffer);
 +	check(VertexBuffer->IsInitialized());
 +	check(Streams.Num() == 0);
@@ -133,21 +182,23 @@ index 2222222..5555555 100644
 +
 +	InitDeclaration(Elements);
 +	check(IsValidRef(GetDeclaration()));
- }
- 
- IMPLEMENT_VERTEX_FACTORY_TYPE_EX(
- 	FSoftwareRTCaptureVertexFactory,
- 	"/Engine/Private/SoftwareRTCaptureVertexFactory.ush",
- 	true, false, false, false, false, false, false);
++}
++
++IMPLEMENT_VERTEX_FACTORY_TYPE_EX(
++	FSoftwareRTCaptureVertexFactory,
++	"/Engine/Private/SoftwareRTCaptureVertexFactory.ush",
++	true, false, false, false, false, false, false);
 diff --git a/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush b/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
-index 3333333..6666666 100644
+index 0000000..9999999 100644
 --- a/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
 +++ b/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
-@@ -1,4 +1,211 @@
- // Copyright Epic Games, Inc. All Rights Reserved.
- 
+@@ -1,4 +1,197 @@
+-// Copyright Epic Games, Inc. All Rights Reserved.
+-
 -// Deliberately empty while the C++ vertex factory remains an inert registration stub.
 -// Add the vertex-factory shader ABI only when its input streams are implemented.
++// Copyright Epic Games, Inc. All Rights Reserved.
++
 +#include "VertexFactoryCommon.ush"
 +
 +// Attribute layout must match FSoftwareRTCaptureVertex in
