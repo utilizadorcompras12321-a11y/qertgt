@@ -108,8 +108,17 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRT/SoftwareRTRayTrac
 @@
  	}
 -	return OutHit.bHit;
-+	return OutHit.bHit && !OutHit.WorldPosition.ContainsNaN() &&
-+		!OutHit.WorldGeometricNormal.ContainsNaN() && !OutHit.WorldGeometricNormal.IsNearlyZero();
++	if (!OutHit.bHit)
++	{
++		return false;
++	}
++	if (OutHit.WorldPosition.ContainsNaN() || OutHit.WorldGeometricNormal.ContainsNaN() ||
++		OutHit.WorldGeometricNormal.IsNearlyZero())
++	{
++		OutHit = FSoftwareRTHit();
++		return false;
++	}
++	return true;
  }
 ```
 
