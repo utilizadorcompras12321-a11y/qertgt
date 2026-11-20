@@ -25,7 +25,7 @@ diff --git a/Engine/Source/Runtime/Engine/Private/Materials/Material.cpp b/Engin
 +	bUsedWithSoftwareRTCapture = false;
  PRAGMA_DISABLE_DEPRECATION_WARNINGS
  	D3D11TessellationMode = MTM_NoTessellation;
- 	 bEnableCrackFreeDisplacement = false;
+ 	bEnableCrackFreeDisplacement = false;
 diff --git a/Engine/Source/Runtime/Engine/Public/MaterialShared.h b/Engine/Source/Runtime/Engine/Public/MaterialShared.h
 --- a/Engine/Source/Runtime/Engine/Public/MaterialShared.h
 +++ b/Engine/Source/Runtime/Engine/Public/MaterialShared.h
