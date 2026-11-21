@@ -107,14 +107,6 @@ class ENGINE_API UDirectionalLightComponent : public ULightComponent
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=CascadedShadowMaps, DisplayName = "Inset Shadows For Movable Objects")
 	uint32 bUseInsetShadowsForMovableObjects : 1;
 
-	/**
-	 * Experimental. When enabled, translucent objects cast COLORED shadows onto opaque surfaces through a dedicated
-	 * per-cascade translucency shadow map (RGB transmittance + nearest translucent depth).
-	 * Costs one extra shadow-space pass per cascade (limited by r.ColoredCascadeShadows.MaxCascades), one screen-space pass and
-	 * one extra shadow-tint texture read in the light pass. When disabled (default) nothing extra is rendered or allocated.
-	 * Only used when this light renders whole scene dynamic cascaded shadows.
-	 */
-	
 
 	/** 0: no DistantShadowCascades, otherwise the count of cascades between WholeSceneDynamicShadowRadius and DistantShadowDistance that are covered by distant shadow cascades. */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, BlueprintReadOnly, Category=CascadedShadowMaps, meta=(UIMin = "0", UIMax = "4"), DisplayName = "Far Shadow Cascade Count")
