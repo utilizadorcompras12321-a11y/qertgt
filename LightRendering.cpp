@@ -19,6 +19,7 @@
 #include "SceneTextureParameters.h"
 #include "HairStrands/HairStrandsRendering.h"
 #include "ScreenPass.h"
+#include "RenderGraphUtils.h"
 #include "SkyAtmosphereRendering.h"
 #include "VolumetricCloudRendering.h"
 
@@ -341,6 +342,47 @@ TGlobalResource<StencilingGeometry::FStencilConeIndexBuffer> StencilingGeometry:
 // Implement a version for directional lights, and a version for point / spot lights
 IMPLEMENT_SHADER_TYPE(template<>,TDeferredLightVS<false>,TEXT("/Engine/Private/DeferredLightVertexShaders.usf"),TEXT("DirectionalVertexMain"),SF_Vertex);
 IMPLEMENT_SHADER_TYPE(template<>,TDeferredLightVS<true>,TEXT("/Engine/Private/DeferredLightVertexShaders.usf"),TEXT("RadialVertexMain"),SF_Vertex);
+
+
+class FScreenSpaceShadowsCS : public FGlobalShader
+{
+public:
+	DECLARE_GLOBAL_SHADER(FScreenSpaceShadowsCS);
+	SHADER_USE_PARAMETER_STRUCT(FScreenSpaceShadowsCS, FGlobalShader);
+
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+	}
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, SceneDepthTexture)
+		SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D, ScreenSpaceShadowOutput)
+
+		SHADER_PARAMETER(float, SurfaceThickness)
+		SHADER_PARAMETER(float, BilinearThreshold)
+		SHADER_PARAMETER(float, ShadowContrast)
+		SHADER_PARAMETER(uint32, IgnoreEdgePixels)
+		SHADER_PARAMETER(uint32, UsePrecisionOffset)
+		SHADER_PARAMETER(uint32, BilinearSamplingOffsetMode)
+
+		SHADER_PARAMETER(uint32, DebugOutputEdgeMask)
+		SHADER_PARAMETER(uint32, DebugOutputThreadIndex)
+		SHADER_PARAMETER(uint32, DebugOutputWaveIndex)
+		SHADER_PARAMETER(FVector2D, DepthBounds)
+		SHADER_PARAMETER(uint32, UseEarlyOut)
+
+		SHADER_PARAMETER(FVector4, LightCoordinate)
+		SHADER_PARAMETER(FIntPoint, WaveOffset)
+		SHADER_PARAMETER(float, FarDepthValue)
+		SHADER_PARAMETER(float, NearDepthValue)
+		SHADER_PARAMETER(FVector2D, InvDepthTextureSize)
+		SHADER_PARAMETER(FIntPoint, ViewRectMin)
+		SHADER_PARAMETER(FIntPoint, ViewRectSize)
+	END_SHADER_PARAMETER_STRUCT()
+};
+
+IMPLEMENT_GLOBAL_SHADER(FScreenSpaceShadowsCS, "/Engine/Private/ScreenSpaceShadows.usf", "ScreenSpaceShadowsCS", SF_Compute);
 
 
 struct FRenderLightParams
