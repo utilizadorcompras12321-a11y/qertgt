@@ -54,3 +54,20 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h 
  	 *
  	 * Call only inside a render pass with three PF_FloatRGBA targets bound and
  	 * the chart viewport/scissor configured. This is a smoke-test helper, not
+diff --git a/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush b/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
+--- a/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
++++ b/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
+@@ -169,3 +169,6 @@
+ 	Interpolants.TangentToWorld2 = float4(
+ 		Intermediates.TangentToWorld[2],
+ 		Intermediates.TangentToWorldSign);
++#if USE_WORLDVERTEXNORMAL_CENTER_INTERPOLATION
++	Interpolants.TangentToWorld2_Center = Interpolants.TangentToWorld2;
++#endif
+@@ -195,3 +198,6 @@
+ 	Result.TangentToWorld = AssembleTangentToWorld(Interpolants.TangentToWorld0.xyz, Interpolants.TangentToWorld2);
+ 	Result.UnMirrored = Interpolants.TangentToWorld2.w;
++#if USE_WORLDVERTEXNORMAL_CENTER_INTERPOLATION
++	Result.WorldVertexNormal_Center = Interpolants.TangentToWorld2_Center.xyz;
++#endif
+ 	Result.TwoSidedSign = 1;
