@@ -60,7 +60,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 +		for (int32 Index = GSoftwareRTCaptureRetiredDrawItems.Num() - 1; Index >= 0; --Index)
 +		{
 +			FSoftwareRTCaptureRetiredDrawItems& Retired = GSoftwareRTCaptureRetiredDrawItems[Index];
-+			if (!Retired.Fence.IsValid() || Retired.Fence->IsComplete())
++			if (!IsValidRef(Retired.Fence) || Retired.Fence->IsComplete())
 +			{
 +				Retired.Owners.Reset();
 +				GSoftwareRTCaptureRetiredDrawItems.RemoveAtSwap(Index, 1, false);
@@ -80,7 +80,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 +
 +		FGraphEventRef Fence = RHICmdList.RHIThreadFence();
 +		RHICmdList.ImmediateFlush(EImmediateFlushType::DispatchToRHIThread);
-+		if (!Fence.IsValid())
++		if (!IsValidRef(Fence))
 +		{
 +			Owners.Reset();
 +			return;
