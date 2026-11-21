@@ -102,7 +102,7 @@ new file mode 100644
 index 0000000..9999999
 --- /dev/null
 +++ b/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,77 @@
 +// Copyright Epic Games, Inc. All Rights Reserved.
 +
 +// Material evaluation for the Software RT Surface Cache.
@@ -137,7 +137,6 @@ index 0000000..9999999
 +		VFIntermediates,
 +		VertexParameters);
 +
-+	return Output;
 +}
 +
 +void FPixelShaderInOut_MainPS(
