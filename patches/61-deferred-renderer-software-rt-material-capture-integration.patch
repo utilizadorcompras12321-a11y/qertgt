@@ -1,0 +1,207 @@
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+@@ -17,6 +17,9 @@
+ #include "StaticMeshResources.h"
+ #include "SoftwareRTCaptureVertexFactory.h"
+ #include "RHI.h"
++#include "HAL/IConsoleManager.h"
++#include "Async/TaskGraphInterfaces.h"
++#include "RenderTargetPool.h"
+ class FStaticMeshBatch;
+ class FScene;
+ 
+@@ -22,6 +25,82 @@
+ 
+ namespace SoftwareRTMaterialCapture
+ {
++
++	static TAutoConsoleVariable<int32> CVarSoftwareRTMaterialCapture(
++		TEXT("r.SoftwareRT.MaterialCapture"),
++		0,
++		TEXT("Enables the experimental CPU-built Software RT material capture atlas."),
++		ECVF_RenderThreadSafe);
++
++	static TRefCountPtr<IPooledRenderTarget> GSoftwareRTCaptureBaseColorRoughness;
++	static TRefCountPtr<IPooledRenderTarget> GSoftwareRTCaptureWorldNormalMetallic;
++	static TRefCountPtr<IPooledRenderTarget> GSoftwareRTCaptureEmissiveSpecular;
++
++	struct FSoftwareRTCaptureRetiredDrawItems
++	{
++		FGraphEventRef Fence;
++		TArray<TSharedPtr<FSoftwareRTCaptureDrawItem>> Owners;
++	};
++
++	static TArray<FSoftwareRTCaptureRetiredDrawItems> GSoftwareRTCaptureRetiredDrawItems;
++
++	bool IsSoftwareRTMaterialCaptureEnabled()
++	{
++		return CVarSoftwareRTMaterialCapture.GetValueOnRenderThread() != 0;
++	}
++
++	const TRefCountPtr<IPooledRenderTarget>& GetSoftwareRTCaptureBaseColorRoughness()
++	{
++		return GSoftwareRTCaptureBaseColorRoughness;
++	}
++
++	const TRefCountPtr<IPooledRenderTarget>& GetSoftwareRTCaptureWorldNormalMetallic()
++	{
++		return GSoftwareRTCaptureWorldNormalMetallic;
++	}
++
++	const TRefCountPtr<IPooledRenderTarget>& GetSoftwareRTCaptureEmissiveSpecular()
++	{
++		return GSoftwareRTCaptureEmissiveSpecular;
++	}
++
++	void CollectRetiredSoftwareRTCaptureDrawItems_RenderThread()
++	{
++		check(IsInRenderingThread());
++		for (int32 Index = GSoftwareRTCaptureRetiredDrawItems.Num() - 1; Index >= 0; --Index)
++		{
++			FSoftwareRTCaptureRetiredDrawItems& Retired = GSoftwareRTCaptureRetiredDrawItems[Index];
++			if (!Retired.Fence.IsValid() || Retired.Fence->IsComplete())
++			{
++				Retired.Owners.Reset();
++				GSoftwareRTCaptureRetiredDrawItems.RemoveAtSwap(Index, 1, false);
++			}
++		}
++	}
++
++	void RetireSoftwareRTCaptureDrawItems_RenderThread(
++		FRHICommandListImmediate& RHICmdList,
++		TArray<TSharedPtr<FSoftwareRTCaptureDrawItem>>&& Owners)
++	{
++		check(IsInRenderingThread());
++		if (Owners.Num() == 0)
++		{
++			return;
++		}
++
++		FGraphEventRef Fence = RHICmdList.RHIThreadFence();
++		RHICmdList.ImmediateFlush(EImmediateFlushType::DispatchToRHIThread);
++		if (!Fence.IsValid())
++		{
++			Owners.Reset();
++			return;
++		}
++
++		FSoftwareRTCaptureRetiredDrawItems& Retired = GSoftwareRTCaptureRetiredDrawItems.AddDefaulted_GetRef();
++		Retired.Fence = Fence;
++		Retired.Owners = MoveTemp(Owners);
++	}
++
+ 	BEGIN_SHADER_PARAMETER_STRUCT(FSoftwareRTMaterialCapturePassParameters, )
+ 		RENDER_TARGET_BINDING_SLOTS()
+ 	END_SHADER_PARAMETER_STRUCT()
+@@ -272,6 +351,9 @@
+ 		Outputs.BaseColorRoughness = GraphBuilder.CreateTexture(CaptureDesc, TEXT("SoftwareRT.BaseColorRoughness"));
+ 		Outputs.WorldNormalMetallic = GraphBuilder.CreateTexture(CaptureDesc, TEXT("SoftwareRT.WorldNormalMetallic"));
+ 		Outputs.EmissiveSpecular = GraphBuilder.CreateTexture(CaptureDesc, TEXT("SoftwareRT.EmissiveSpecular"));
++		GraphBuilder.QueueTextureExtraction(Outputs.BaseColorRoughness, &GSoftwareRTCaptureBaseColorRoughness);
++		GraphBuilder.QueueTextureExtraction(Outputs.WorldNormalMetallic, &GSoftwareRTCaptureWorldNormalMetallic);
++		GraphBuilder.QueueTextureExtraction(Outputs.EmissiveSpecular, &GSoftwareRTCaptureEmissiveSpecular);
+ 
+ 		FSoftwareRTMaterialCapturePassParameters* PassParameters =
+ 			GraphBuilder.AllocParameters<FSoftwareRTMaterialCapturePassParameters>();
+@@ -292,7 +374,7 @@
+ 		GraphBuilder.AddPass(
+ 			RDG_EVENT_NAME("SoftwareRTMaterialCapture"),
+ 			PassParameters,
++			ERDGPassFlags::Raster | ERDGPassFlags::NeverCull,
+-			ERDGPassFlags::Raster,
+ 			[Scene, &View, MeshBatchesCopy, AtlasExtent](FRHICommandListImmediate& RHICmdList)
+ 		{
+ 			RHICmdList.SetViewport(0.0f, 0.0f, 0.0f, float(AtlasExtent.X), float(AtlasExtent.Y), 1.0f);
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+@@ -9,6 +9,8 @@
+ class FStaticMeshBatch;
+ class FScene;
+ class FSoftwareRTCaptureDrawItem;
++class FRHICommandListImmediate;
++class IPooledRenderTarget;
+ #include "RenderGraphBuilder.h"
+ 
+ namespace SoftwareRTMaterialCapture
+@@ -85,6 +87,16 @@
+ 	 * the chart viewport/scissor configured. This is a smoke-test helper, not
+ 	 * the production RDG integration.
+ 	 */
++
++	RENDERER_API bool IsSoftwareRTMaterialCaptureEnabled();
++	RENDERER_API void CollectRetiredSoftwareRTCaptureDrawItems_RenderThread();
++	RENDERER_API void RetireSoftwareRTCaptureDrawItems_RenderThread(
++		FRHICommandListImmediate& RHICmdList,
++		TArray<TSharedPtr<FSoftwareRTCaptureDrawItem>>&& Owners);
++	RENDERER_API const TRefCountPtr<IPooledRenderTarget>& GetSoftwareRTCaptureBaseColorRoughness();
++	RENDERER_API const TRefCountPtr<IPooledRenderTarget>& GetSoftwareRTCaptureWorldNormalMetallic();
++	RENDERER_API const TRefCountPtr<IPooledRenderTarget>& GetSoftwareRTCaptureEmissiveSpecular();
++
+ 	RENDERER_API void DrawSoftwareRTMaterialCaptureMesh(
+ 		const FScene* Scene,
+ 		const FSceneView& View,
+diff --git a/Engine/Source/Runtime/Renderer/Private/DeferredShadingRenderer.cpp b/Engine/Source/Runtime/Renderer/Private/DeferredShadingRenderer.cpp
+--- a/Engine/Source/Runtime/Renderer/Private/DeferredShadingRenderer.cpp
++++ b/Engine/Source/Runtime/Renderer/Private/DeferredShadingRenderer.cpp
+@@ -51,6 +51,7 @@
+ #include "GPUSortManager.h"
+ #include "Experimental/Containers/SherwoodHashTable.h"
+ #include "RayTracingGeometryManager.h"
++#include "SoftwareRTMaterialCapture.h"
+ 
+ static TAutoConsoleVariable<int32> CVarStencilForLODDither(
+ 	TEXT("r.StencilForLODDither"),
+@@ -1338,6 +1339,7 @@
+ void FDeferredShadingSceneRenderer::Render(FRHICommandListImmediate& RHICmdList)
+ {
+ 	Scene->UpdateAllPrimitiveSceneInfos(RHICmdList, true);
++	SoftwareRTMaterialCapture::CollectRetiredSoftwareRTCaptureDrawItems_RenderThread();
+ 
+ 	check(RHICmdList.IsOutsideRenderPass());
+ 
+@@ -1770,6 +1772,32 @@
+ 
+ 	FRDGBuilder GraphBuilder(RHICmdList, RDG_EVENT_NAME("DeferredShadingRenderer_Render(ViewFamily=%s)", ViewFamily.bResolveScene ? TEXT("Primary") : TEXT("Auxiliary")));
+ 
++	// Experimental Surface Cache capture. Owners stay alive until GraphBuilder.Execute()
++	// and are retired only after the RHI thread has consumed the submitted draw commands.
++	TArray<TSharedPtr<SoftwareRTMaterialCapture::FSoftwareRTCaptureDrawItem>> SoftwareRTCaptureOwners;
++	TArray<const FMeshBatch*> SoftwareRTCaptureMeshBatches;
++	TArray<SoftwareRTMaterialCapture::FSoftwareRTCaptureTriangleMetadata> SoftwareRTCaptureTriangleMetadata;
++	if (SoftwareRTMaterialCapture::IsSoftwareRTMaterialCaptureEnabled() && Views.Num() > 0)
++	{
++		SoftwareRTMaterialCapture::BuildSoftwareRTCaptureDrawItems(
++			Scene,
++			Views[0],
++			FIntPoint(1024, 1024),
++			SoftwareRTCaptureOwners,
++			SoftwareRTCaptureMeshBatches,
++			SoftwareRTCaptureTriangleMetadata);
++
++		if (SoftwareRTCaptureMeshBatches.Num() > 0)
++		{
++			SoftwareRTMaterialCapture::AddSoftwareRTMaterialCapturePass(
++				GraphBuilder,
++				Scene,
++				Views[0],
++				SoftwareRTCaptureMeshBatches,
++				FIntPoint(1024, 1024));
++		}
++	}
++
+ 	const FIntPoint SceneTextureExtent = SceneContext.GetBufferSizeXY();
+ 
+ 	FRDGTextureMSAA SceneDepthTexture = RegisterExternalTextureMSAA(GraphBuilder, SceneContext.SceneDepthZ);
+@@ -2708,6 +2736,10 @@
+ 
+ 	GraphBuilder.Execute();
+ 
++	SoftwareRTMaterialCapture::RetireSoftwareRTCaptureDrawItems_RenderThread(
++		RHICmdList,
++		MoveTemp(SoftwareRTCaptureOwners));
++
+ 	ServiceLocalQueue();
+ }
+ 
