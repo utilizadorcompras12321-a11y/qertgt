@@ -47,7 +47,7 @@ diff --git a/Engine/Source/Runtime/Engine/Classes/Engine/InstancedStaticMesh.h b
 diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
-@@ -11,6 +11,10 @@
+@@ -11,6 +11,12 @@
  #include "RenderGraphUtils.h"
  #include "SoftwareRTCaptureVertexFactory.h"
  #include "SoftwareRTMaterialCapture.h"
@@ -185,7 +185,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
-@@ -3,6 +3,8 @@
+@@ -3,6 +3,11 @@
  #pragma once
  
  #include "MeshPassProcessor.h"
