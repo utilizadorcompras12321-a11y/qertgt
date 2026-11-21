@@ -1,28 +1,36 @@
 diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
-@@ -153,6 +153,9 @@
+@@ -7,6 +7,7 @@
+ #include "RenderUtils.h"
+ #include "MeshPassProcessor.h"
+ #include "MeshPassProcessor.inl"
++#include "ShaderBaseClasses.h"
+ #include "RenderGraphBuilder.h"
+ #include "RenderGraphUtils.h"
+ #include "SoftwareRTCaptureVertexFactory.h"
+@@ -152,7 +153,10 @@
+ 			&& Material.MaterialDomain == MD_Surface
  			&& Material.BlendMode == BLEND_Opaque
  			&& !Material.bIsTwoSided
- 			&& Material.NumCustomizedUVs == 0
++			&& Material.NumCustomizedUVs == 0
 +			&& Material.ShadingModels.HasOnlyShadingModel(MSM_DefaultLit)
 +			&& !Material.bHasAnisotropyConnected
 +			&& !Material.bHasRuntimeVirtualTextureOutput
+-			&& Material.NumCustomizedUVs <= 4
  			&& Material.TessellationMode == MTM_NoTessellation
  			&& !Material.bHasVertexPositionOffsetConnected
  			&& !Material.bHasPixelDepthOffsetConnected
-@@ -231,8 +233,8 @@
- 	/**
+@@ -232,7 +236,7 @@
  	 * Deliberately narrow first draw path:
  	 * - one caller-owned capture FMeshBatch;
-+	 * - chart-expanded vertices remain in local space and use the source primitive uniform buffer;
+ 	 * - chart-expanded vertices already contain translated-world positions;
 +	 * - per-object primitive uniform buffer and PrimID_ForceZero.
--	 * - chart-expanded vertices already contain translated-world positions;
 -	 * - identity primitive uniform buffer and PrimID_ForceZero.
  	 *
  	 * The VF does not advertise a primitive-ID stream, so UE4.27 binds the
  	 * element's primitive uniform buffer even when GPU Scene is enabled.
-@@ -595,8 +597,8 @@
+@@ -595,8 +599,8 @@
  		explicit FSoftwareRTCaptureDrawItem(
  			ERHIFeatureLevel::Type FeatureLevel,
  			FRHIUniformBuffer* InPrimitiveUniformBuffer)
