@@ -1,7 +1,7 @@
 diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
-@@ -585,3 +585,3 @@
+@@ -585,2 +585,2 @@
 -			: VertexFactory(FeatureLevel)
 -			, PrimitiveUniformBuffer(InPrimitiveUniformBuffer)
 +			: PrimitiveUniformBuffer(InPrimitiveUniformBuffer)
