@@ -1,0 +1,142 @@
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+@@ -66,6 +66,15 @@
+ 		return GSoftwareRTCaptureEmissiveSpecular;
+ 	}
+ 
++	void ResetSoftwareRTMaterialCaptureFrame_RenderThread()
++	{
++		check(IsInRenderingThread());
++		GSoftwareRTCaptureBaseColorRoughness = nullptr;
++		GSoftwareRTCaptureWorldNormalMetallic = nullptr;
++		GSoftwareRTCaptureEmissiveSpecular = nullptr;
++		GSoftwareRTCaptureTriangleMetadata.Reset();
++	}
++
+ 	const TArray<FSoftwareRTCaptureTriangleMetadata>& GetSoftwareRTCaptureTriangleMetadata()
+ 	{
+ 		return GSoftwareRTCaptureTriangleMetadata;
+@@ -269,8 +278,8 @@
+ 
+ 				const FMeshBatchElement& Element = MeshBatch.Elements[ElementIndex];
+ 				if (Element.PrimitiveIdMode != PrimID_ForceZero
++					|| Element.PrimitiveUniformBuffer == nullptr
++					|| Element.PrimitiveUniformBufferResource != nullptr)
+-					|| Element.PrimitiveUniformBuffer != nullptr
+-					|| Element.PrimitiveUniformBufferResource != &GIdentityPrimitiveUniformBuffer)
+ 				{
+ 					return;
+ 				}
+@@ -452,7 +461,8 @@
+ 			}
+ 
+ 			const FPrimitiveSceneProxy* Proxy = PrimitiveSceneInfo->Proxy;
++			if (Proxy->GetUniformBuffer() == nullptr
++				|| Proxy->GetTypeHash() != FStaticMeshSceneProxy::GetStaticMeshSceneProxyTypeHash())
+-			if (Proxy->GetTypeHash() != FStaticMeshSceneProxy::GetStaticMeshSceneProxyTypeHash())
+ 			{
+ 				continue;
+ 			}
+@@ -582,9 +592,13 @@
+ 	class FSoftwareRTCaptureDrawItem
+ 	{
+ 	public:
++		explicit FSoftwareRTCaptureDrawItem(
++			ERHIFeatureLevel::Type FeatureLevel,
++			FRHIUniformBuffer* InPrimitiveUniformBuffer)
+-		explicit FSoftwareRTCaptureDrawItem(ERHIFeatureLevel::Type FeatureLevel)
+ 			: VertexFactory(FeatureLevel)
++			, PrimitiveUniformBuffer(InPrimitiveUniformBuffer)
+ 		{
++			check(IsValidRef(PrimitiveUniformBuffer));
+ 		}
+ 
+ 		~FSoftwareRTCaptureDrawItem()
+@@ -624,6 +638,7 @@
+ 			}
+ 		}
+ 
++		FUniformBufferRHIRef PrimitiveUniformBuffer;
+ 		FSoftwareRTCaptureVertexFactory VertexFactory;
+ 		FSoftwareRTCaptureVertexBuffer VertexBuffer;
+ 		FSoftwareRTCaptureIndexBuffer IndexBuffer;
+@@ -672,9 +687,10 @@
+ 			const FColorVertexBuffer& ColorBuffer = LOD.VertexBuffers.ColorVertexBuffer;
+ 			const FIndexArrayView IndexArray = LOD.IndexBuffer.GetArrayView();
+ 			const FPrimitiveSceneProxy* Proxy = Candidate.PrimitiveSceneInfo->Proxy;
++			if (Proxy == nullptr || Proxy->GetUniformBuffer() == nullptr)
++			{
++				continue;
++			}
+-			const FMatrix& LocalToWorld = Proxy->GetLocalToWorld();
+-			const FMatrix NormalToWorld = LocalToWorld.InverseFast().GetTransposed();
+-			const bool bNegativeDeterminant = Proxy->IsLocalToWorldDeterminantNegative();
+ 			const uint32 NumTriangles = FMath::Min<uint32>(
+ 				SourceElement.NumPrimitives,
+ 				MaxCharts - NextChartId);
+@@ -732,26 +748,22 @@
+ 				for (uint32 Corner = 0; Corner < 3; ++Corner)
+ 				{
+ 					const uint32 VertexIndex = VertexIndices[Corner];
++					const FVector LocalPosition = PositionBuffer.VertexPosition(VertexIndex);
+-					const FVector WorldPosition = LocalToWorld.TransformPosition(PositionBuffer.VertexPosition(VertexIndex));
+ 					const FVector4 SourceTangentX = StaticVertexBuffer.VertexTangentX(VertexIndex);
+ 					const FVector4 SourceTangentZ = StaticVertexBuffer.VertexTangentZ(VertexIndex);
++					const FVector LocalNormal(SourceTangentZ.X, SourceTangentZ.Y, SourceTangentZ.Z);
++					FVector LocalTangentX(SourceTangentX.X, SourceTangentX.Y, SourceTangentX.Z);
++					LocalTangentX = (LocalTangentX - LocalNormal * (LocalTangentX | LocalNormal)).GetSafeNormal();
++					if (LocalNormal.IsNearlyZero() || LocalTangentX.IsNearlyZero())
+-
+-					const FVector WorldNormal = NormalToWorld.TransformVector(
+-						FVector(SourceTangentZ.X, SourceTangentZ.Y, SourceTangentZ.Z)).GetSafeNormal();
+-					FVector WorldTangentX = LocalToWorld.TransformVector(
+-						FVector(SourceTangentX.X, SourceTangentX.Y, SourceTangentX.Z)).GetSafeNormal();
+-					WorldTangentX = (WorldTangentX - WorldNormal * (WorldTangentX | WorldNormal)).GetSafeNormal();
+-					if (WorldNormal.IsNearlyZero() || WorldTangentX.IsNearlyZero())
+ 					{
+ 						bValidTriangle = false;
+ 						break;
+ 					}
+ 
+ 					FSoftwareRTCaptureVertex& Vertex = TriangleVertices[Corner];
++					Vertex.Position = FVector4(LocalPosition, 1.0f);
++					Vertex.TangentX = FVector4(LocalTangentX, 0.0f);
++					Vertex.TangentZ = FVector4(LocalNormal, SourceTangentZ.W);
+-					Vertex.Position = FVector4(WorldPosition, 1.0f);
+-					Vertex.TangentX = FVector4(WorldTangentX, 0.0f);
+-					const float Handedness = SourceTangentZ.W * (bNegativeDeterminant ? -1.0f : 1.0f);
+-					Vertex.TangentZ = FVector4(WorldNormal, Handedness);
+ 					for (uint32 UVIndex = 0; UVIndex < 4; ++UVIndex)
+ 					{
+ 						Vertex.TexCoords[UVIndex] = UVIndex < StaticVertexBuffer.GetNumTexCoords()
+@@ -794,7 +806,7 @@
+ 			}
+ 
+ 			TSharedPtr<FSoftwareRTCaptureDrawItem> DrawItem =
++				MakeShareable(new FSoftwareRTCaptureDrawItem(View.GetFeatureLevel(), Proxy->GetUniformBuffer()));
+-				MakeShareable(new FSoftwareRTCaptureDrawItem(View.GetFeatureLevel()));
+ 			DrawItem->Initialize_RenderThread(Vertices, Indices);
+ 
+ 			FMeshBatch& CaptureBatch = DrawItem->MeshBatch;
+@@ -819,7 +831,8 @@
+ 			CaptureElement.MinVertexIndex = 0;
+ 			CaptureElement.MaxVertexIndex = Vertices.Num() - 1;
+ 			CaptureElement.PrimitiveIdMode = PrimID_ForceZero;
++			CaptureElement.PrimitiveUniformBuffer = DrawItem->PrimitiveUniformBuffer.GetReference();
++			CaptureElement.PrimitiveUniformBufferResource = nullptr;
+-			CaptureElement.PrimitiveUniformBufferResource = &GIdentityPrimitiveUniformBuffer;
+ 
+ 			OutMeshBatches.Add(&CaptureBatch);
+ 			OutOwners.Add(DrawItem);
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+@@ -75,6 +75,7 @@
+ 
+ 
+ 	RENDERER_API bool IsSoftwareRTMaterialCaptureEnabled();
++	RENDERER_API void ResetSoftwareRTMaterialCaptureFrame_RenderThread();
+ 	RENDERER_API void CollectRetiredSoftwareRTCaptureDrawItems_RenderThread();
+ 	RENDERER_API void ShutdownSoftwareRTMaterialCapture_RenderThread(FRHICommandListImmediate& RHICmdList);
+ 	RENDERER_API void RetireSoftwareRTCaptureDrawItems_RenderThread(
