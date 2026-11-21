@@ -1371,6 +1371,7 @@ void GetRenderLightParameters(
 	Parameters.SceneTextures = SceneTexturesUniformBuffer;
 	Parameters.ShadowMaskTexture = ShadowMaskTexture;
 	Parameters.LightingChannelsTexture = LightingChannelsTexture;
+	Parameters.BendScreenSpaceShadowTexture = nullptr;
 	Parameters.HairCategorizationTexture = InHairVisibilityViews && InHairVisibilityViews->HairDatas.Num() > 0 ? InHairVisibilityViews->HairDatas[0].CategorizationTexture : nullptr;
 	Parameters.RenderTargets[0] = FRenderTargetBinding(SceneColorTexture, ERenderTargetLoadAction::ELoad);
 
