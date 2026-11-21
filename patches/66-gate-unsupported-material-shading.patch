@@ -4,7 +4,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 @@ -153,6 +153,9 @@
  			&& Material.BlendMode == BLEND_Opaque
  			&& !Material.bIsTwoSided
- 			&& Material.NumCustomizedUVs <= 4
+ 			&& Material.NumCustomizedUVs == 0
 +			&& Material.ShadingModels.HasOnlyShadingModel(MSM_DefaultLit)
 +			&& !Material.bHasAnisotropyConnected
 +			&& !Material.bHasRuntimeVirtualTextureOutput
