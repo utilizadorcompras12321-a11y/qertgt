@@ -2210,6 +2210,7 @@ FRDGTextureRef FDeferredShadingSceneRenderer::RenderLights(
 
 				// Optional Bend SSS debug output. The result is kept separate from the RGBA shadow mask.
 				if (CVarScreenSpaceShadows.GetValueOnRenderThread() != 0
+					&& FeatureLevel >= ERHIFeatureLevel::SM5
 					&& bDirectLighting
 					&& bDrawShadows
 					&& bUsedShadowMaskTexture
