@@ -11,6 +11,10 @@
 #include "DeferredShadingCommon.ush"
 #include "DeferredLightingCommon.ush"
 
+// Optional Bend Studio screen-space shadow visibility.
+Texture2D<float> BendScreenSpaceShadowTexture;
+uint BendScreenSpaceShadowValid;
+
 #if USE_HAIR_LIGHTING == 1
 #include "HairStrands/HairStrandsVisibilityCommon.ush"
 #endif
@@ -187,7 +191,13 @@ void DeferredLightPixelMain(
 
 		FRectTexture RectTexture = InitRectTexture(DeferredLightUniforms.SourceTexture);
 		float SurfaceShadow = 1.0f;
-		const float4 Radiance = GetDynamicLighting(DerivedParams.WorldPosition, DerivedParams.CameraVector, ScreenSpaceData.GBuffer, ScreenSpaceData.AmbientOcclusion, ScreenSpaceData.GBuffer.ShadingModelID, LightData, GetPerPixelLightAttenuation(InputParams.ScreenUV), Dither, uint2(InputParams.PixelPos), RectTexture, SurfaceShadow);
+		float4 LightAttenuation = GetPerPixelLightAttenuation(InputParams.ScreenUV);
+		// Bend SSS modifies opaque visibility only; preserve transmission and auxiliary mask channels.
+		if (BendScreenSpaceShadowValid != 0)
+		{
+			LightAttenuation.x *= BendScreenSpaceShadowTexture.Load(uint3(uint2(SVPos.xy), 0));
+		}
+		const float4 Radiance = GetDynamicLighting(DerivedParams.WorldPosition, DerivedParams.CameraVector, ScreenSpaceData.GBuffer, ScreenSpaceData.AmbientOcclusion, ScreenSpaceData.GBuffer.ShadingModelID, LightData, LightAttenuation, Dither, uint2(InputParams.PixelPos), RectTexture, SurfaceShadow);
 		const float  Attenuation = ComputeLightProfileMultiplier(DerivedParams.WorldPosition, DeferredLightUniforms.Position, -DeferredLightUniforms.Direction, DeferredLightUniforms.Tangent);
 
 		OutColor += (Radiance * Attenuation);
