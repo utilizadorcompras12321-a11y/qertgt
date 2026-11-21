@@ -105,8 +105,6 @@ public:
 
 	bool bUseInsetShadowsForMovableObjects;
 
-	/** Whether translucent casters cast colored shadows through the cascades (see UDirectionalLightComponent::bCastColoredTranslucentCascadeShadows). */
-	bool bCastColoredTranslucentCascadeShadows;
 
 	/** 
 	 * Controls how dark the occlusion masking is, a value of 1 results in no darkening term.
@@ -196,7 +194,6 @@ public:
 		ShadowCascadeBiasDistribution(Component->ShadowCascadeBiasDistribution),
 		bEnableLightShaftOcclusion(Component->bEnableLightShaftOcclusion),
 		bUseInsetShadowsForMovableObjects(Component->bUseInsetShadowsForMovableObjects),
-		bCastColoredTranslucentCascadeShadows(Component->bCastColoredTranslucentCascadeShadows),
 		OcclusionMaskDarkness(Component->OcclusionMaskDarkness),
 		OcclusionDepthRange(Component->OcclusionDepthRange),
 		LightShaftOverrideDirection(Component->LightShaftOverrideDirection),
@@ -542,10 +539,6 @@ public:
 	virtual float GetCloudShadowDepthBias()  const override
 	{
 		return CloudShadowDepthBias;
-	}
-	virtual bool CastsColoredTranslucentCascadeShadows() const override
-	{
-		return bCastColoredTranslucentCascadeShadows;
 	}
 
 	virtual float GetCloudShadowOnSurfaceStrength()  const override
@@ -998,7 +991,6 @@ UDirectionalLightComponent::UDirectionalLightComponent(const FObjectInitializer&
 	IndirectLightingIntensity = 1.0f;
 	CastTranslucentShadows = true;
 	bUseInsetShadowsForMovableObjects = true;
-	bCastColoredTranslucentCascadeShadows = false;
 	bCastVolumetricShadow = true;
 
 	ModulatedShadowColor = FColor(128, 128, 128);
