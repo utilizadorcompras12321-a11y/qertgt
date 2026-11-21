@@ -219,27 +219,3 @@ index 0000000..aaaaaaa 100644
 +		FRHICommandList& RHICmdList,
 +		const FMeshBatch& MeshBatch);
 +}
-diff --git a/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf b/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf
-index 9999999..aaaaaaa 100644
---- a/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf
-+++ b/Engine/Shaders/Private/SoftwareRTMaterialCapture.usf
-@@ -32,6 +32,4 @@
- 		Input,
- 		VFIntermediates,
- 		VertexParameters);
--
--	return Output;
- }
-diff --git a/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush b/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
-index 9999999..aaaaaaa 100644
---- a/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
-+++ b/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
-@@ -42,3 +42,3 @@
- 	TANGENTTOWORLD_INTERPOLATOR_BLOCK
--\tfloat3 TranslatedWorldPosition : TEXCOORD12;
-+	float3 TranslatedWorldPosition : TEXCOORD12;
-  };
-@@ -167,2 +167,2 @@
--\tInterpolants.TranslatedWorldPosition = VertexParameters.WorldPosition;
-+	Interpolants.TranslatedWorldPosition = VertexParameters.WorldPosition;
- 	Interpolants.TangentToWorld0 = float4(Intermediates.TangentToWorld[0], 0);
