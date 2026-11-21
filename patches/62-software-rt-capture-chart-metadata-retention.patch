@@ -9,11 +9,10 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
  
  	struct FSoftwareRTCaptureRetiredDrawItems
  	{
-@@ -64,6 +65,12 @@
+@@ -64,6 +65,11 @@
  		return GSoftwareRTCaptureEmissiveSpecular;
  	}
  
-+
 +	const TArray<FSoftwareRTCaptureTriangleMetadata>& GetSoftwareRTCaptureTriangleMetadata()
 +	{
 +		return GSoftwareRTCaptureTriangleMetadata;
@@ -22,7 +21,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
  	void CollectRetiredSoftwareRTCaptureDrawItems_RenderThread()
  	{
  		check(IsInRenderingThread());
-@@ -745,6 +752,7 @@
+@@ -749,6 +755,7 @@
  				Metadata.PrimitiveComponentId = Candidate.PrimitiveSceneInfo->PrimitiveComponentId;
  				Metadata.SourceTriangleIndex = int32(SourceElement.FirstIndex / 3 + TriangleIndex);
  				Metadata.MeshIdInPrimitive = SourceBatch.MeshIdInPrimitive;
@@ -30,7 +29,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
  				Metadata.SegmentIndex = SourceBatch.SegmentIndex;
  				Metadata.CaptureChartId = ChartId;
  				Metadata.ChartUV[0] = ChartUV[0];
-@@ -788,6 +796,8 @@
+@@ -792,6 +799,8 @@
  			OutMeshBatches.Add(&CaptureBatch);
  			OutOwners.Add(DrawItem);
  		}
@@ -42,7 +41,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
-@@ -22,6 +22,7 @@
+@@ -27,6 +27,7 @@
  		FPrimitiveComponentId PrimitiveComponentId;
  		int32 SourceTriangleIndex = INDEX_NONE;
  		int32 MeshIdInPrimitive = INDEX_NONE;
@@ -50,11 +49,11 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h 
  		uint8 SegmentIndex = 0;
  		uint32 CaptureChartId = 0;
  		FVector2D ChartUV[3];
-@@ -96,6 +97,7 @@
+@@ -81,6 +82,7 @@
  	RENDERER_API const TRefCountPtr<IPooledRenderTarget>& GetSoftwareRTCaptureBaseColorRoughness();
  	RENDERER_API const TRefCountPtr<IPooledRenderTarget>& GetSoftwareRTCaptureWorldNormalMetallic();
  	RENDERER_API const TRefCountPtr<IPooledRenderTarget>& GetSoftwareRTCaptureEmissiveSpecular();
 +	RENDERER_API const TArray<FSoftwareRTCaptureTriangleMetadata>& GetSoftwareRTCaptureTriangleMetadata();
  
- 	RENDERER_API void DrawSoftwareRTMaterialCaptureMesh(
- 		const FScene* Scene,
+ 	/**
+ 	 * Draws one caller-built chart capture batch.
