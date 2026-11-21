@@ -53,7 +53,9 @@ The capture path is disabled by default. After applying and compiling the Engine
 r.SoftwareRT.MaterialCapture 1
 ```
 
-Initial limitations: only opted-in opaque, one-sided materials; CPU-readable Static Mesh LOD data; no Instanced/HISM meshes; one view-selected LOD; 1024×1024 atlas with a 16-pixel triangle tile (maximum 4096 charts). This is an experimental capture proof, not a production cache: chart dilation, material/view-expression filtering, revision invalidation, and GI/shadow/reflection consumers are still outstanding.
+Initial limitations: only opted-in opaque, one-sided **Default Lit** materials without anisotropy, WPO, PDO, tessellation, or RVT output; CPU-readable Static Mesh LOD data; no Instanced/HISM meshes; one view-selected LOD; 1024×1024 atlas with a 16-pixel triangle tile (maximum 4096 charts). Do not opt in materials using SceneTexture, ScreenPosition, PixelDepth, CameraVector, or other view-dependent expressions: the capture pass does not provide a scene-texture setup or a view-independent evaluation context. Ambient Occlusion is not part of the current three-target payload. This remains an experimental capture proof, not a production cache: chart dilation, complete material-expression validation, revision invalidation, and GI/shadow/reflection consumers are still outstanding.
+
+Patches 64–66 correct three concrete issues found in review: capture vertices now remain in local space and retain the source primitive uniform buffer (so object transforms and primitive material parameters are not replaced with identity); capture outputs and triangle metadata are reset every renderer frame (so disabling capture or having no candidates cannot expose stale results); and shader permutations are restricted to Default Lit, non-anisotropic materials without RVT output.
 
 
 ## Important limitations
