@@ -24,7 +24,8 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 @@ -232,7 +236,7 @@
  	 * Deliberately narrow first draw path:
  	 * - one caller-owned capture FMeshBatch;
- 	 * - chart-expanded vertices already contain translated-world positions;
+-	 * - chart-expanded vertices already contain translated-world positions;
++	 * - chart-expanded vertices retain source local-space positions;
 +	 * - per-object primitive uniform buffer and PrimID_ForceZero.
 -	 * - identity primitive uniform buffer and PrimID_ForceZero.
  	 *
