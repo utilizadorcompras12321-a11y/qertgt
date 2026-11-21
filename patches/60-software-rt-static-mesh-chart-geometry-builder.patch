@@ -1,0 +1,331 @@
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+@@ -15,6 +15,8 @@
+ #include "SceneCore.h"
+ #include "ScenePrivate.h"
+ #include "StaticMeshResources.h"
++#include "SoftwareRTCaptureVertexFactory.h"
++#include "RHI.h"
+ class FStaticMeshBatch;
+ class FScene;
+ 
+@@ -427,6 +429,275 @@
+ 
+ 	}
+ 
++	class FSoftwareRTCaptureIndexBuffer final : public FIndexBuffer
++	{
++	public:
++		void SetIndices_RenderThread(const TArray<uint32>& InIndices)
++		{
++			check(IsInRenderingThread());
++			check(!IsInitialized());
++			check(InIndices.Num() > 0);
++			Indices = InIndices;
++		}
++
++		virtual void InitRHI() override
++		{
++			check(IsInRenderingThread());
++			check(Indices.Num() > 0);
++
++			FRHIResourceCreateInfo CreateInfo;
++			void* BufferData = nullptr;
++			IndexBufferRHI = RHICreateAndLockIndexBuffer(
++				sizeof(uint32),
++				Indices.Num() * sizeof(uint32),
++				BUF_Static,
++				CreateInfo,
++				BufferData);
++			check(BufferData);
++			FMemory::Memcpy(BufferData, Indices.GetData(), Indices.Num() * sizeof(uint32));
++			RHIUnlockIndexBuffer(IndexBufferRHI);
++		}
++
++	private:
++		TArray<uint32> Indices;
++	};
++
++	class FSoftwareRTCaptureDrawItem
++	{
++	public:
++		explicit FSoftwareRTCaptureDrawItem(ERHIFeatureLevel::Type FeatureLevel)
++			: VertexFactory(FeatureLevel)
++		{
++		}
++
++		~FSoftwareRTCaptureDrawItem()
++		{
++			ReleaseResources_RenderThread();
++		}
++
++		void Initialize_RenderThread(
++			const TArray<FSoftwareRTCaptureVertex>& Vertices,
++			const TArray<uint32>& Indices)
++		{
++			check(IsInRenderingThread());
++			VertexBuffer.SetVertices_RenderThread(Vertices);
++			VertexBuffer.InitResource();
++
++			IndexBuffer.SetIndices_RenderThread(Indices);
++			IndexBuffer.InitResource();
++
++			VertexFactory.SetData(&VertexBuffer);
++			VertexFactory.InitResource();
++		}
++
++		void ReleaseResources_RenderThread()
++		{
++			check(IsInRenderingThread());
++			if (VertexFactory.IsInitialized())
++			{
++				VertexFactory.ReleaseResource();
++			}
++			if (IndexBuffer.IsInitialized())
++			{
++				IndexBuffer.ReleaseResource();
++			}
++			if (VertexBuffer.IsInitialized())
++			{
++				VertexBuffer.ReleaseResource();
++			}
++		}
++
++		FSoftwareRTCaptureVertexFactory VertexFactory;
++		FSoftwareRTCaptureVertexBuffer VertexBuffer;
++		FSoftwareRTCaptureIndexBuffer IndexBuffer;
++		FMeshBatch MeshBatch;
++	};
++
++	void BuildSoftwareRTCaptureDrawItems(
++		const FScene* Scene,
++		const FSceneView& View,
++		FIntPoint AtlasExtent,
++		TArray<TSharedPtr<FSoftwareRTCaptureDrawItem>>& OutOwners,
++		TArray<const FMeshBatch*>& OutMeshBatches,
++		TArray<FSoftwareRTCaptureTriangleMetadata>& OutTriangleMetadata)
++	{
++		check(IsInRenderingThread());
++		check(Scene);
++		check(AtlasExtent.X >= 16 && AtlasExtent.Y >= 16);
++
++		OutOwners.Reset();
++		OutMeshBatches.Reset();
++		OutTriangleMetadata.Reset();
++
++		TArray<FSoftwareRTStaticMeshCaptureCandidate> Candidates;
++		GatherSoftwareRTStaticMeshCaptureCandidates(Scene, View, Candidates);
++
++		const int32 TileSize = 16;
++		const int32 Gutter = 1;
++		const int32 TilesX = AtlasExtent.X / TileSize;
++		const int32 TilesY = AtlasExtent.Y / TileSize;
++		const uint32 MaxCharts = uint32(TilesX * TilesY);
++		uint32 NextChartId = 0;
++
++		for (const FSoftwareRTStaticMeshCaptureCandidate& Candidate : Candidates)
++		{
++			if (NextChartId >= MaxCharts || Candidate.MeshBatch == nullptr
++				|| Candidate.PrimitiveSceneInfo == nullptr || !Candidate.LODResource.IsValid())
++			{
++				break;
++			}
++
++			const FMeshBatch& SourceBatch = *Candidate.MeshBatch;
++			const FMeshBatchElement& SourceElement = SourceBatch.Elements[0];
++			const FStaticMeshLODResources& LOD = *Candidate.LODResource;
++			const FPositionVertexBuffer& PositionBuffer = LOD.VertexBuffers.PositionVertexBuffer;
++			const FStaticMeshVertexBuffer& StaticVertexBuffer = LOD.VertexBuffers.StaticMeshVertexBuffer;
++			const FColorVertexBuffer& ColorBuffer = LOD.VertexBuffers.ColorVertexBuffer;
++			const FIndexArrayView IndexArray = LOD.IndexBuffer.GetArrayView();
++			const FPrimitiveSceneProxy* Proxy = Candidate.PrimitiveSceneInfo->Proxy;
++			const FMatrix& LocalToWorld = Proxy->GetLocalToWorld();
++			const FMatrix NormalToWorld = LocalToWorld.InverseFast().GetTransposed();
++			const bool bNegativeDeterminant = Proxy->IsLocalToWorldDeterminantNegative();
++			const uint32 NumTriangles = FMath::Min<uint32>(
++				SourceElement.NumPrimitives,
++				MaxCharts - NextChartId);
++
++			TArray<FSoftwareRTCaptureVertex> Vertices;
++			TArray<uint32> Indices;
++			Vertices.Reserve(NumTriangles * 3);
++			Indices.Reserve(NumTriangles * 3);
++
++			for (uint32 TriangleIndex = 0; TriangleIndex < NumTriangles; ++TriangleIndex)
++			{
++				const uint32 SourceIndex = SourceElement.FirstIndex + TriangleIndex * 3;
++				const uint32 I0 = IndexArray[SourceIndex + 0] + SourceElement.BaseVertexIndex;
++				const uint32 I1 = IndexArray[SourceIndex + 1] + SourceElement.BaseVertexIndex;
++				const uint32 I2 = IndexArray[SourceIndex + 2] + SourceElement.BaseVertexIndex;
++				if (I0 >= PositionBuffer.GetNumVertices()
++					|| I1 >= PositionBuffer.GetNumVertices()
++					|| I2 >= PositionBuffer.GetNumVertices()
++					|| I0 >= StaticVertexBuffer.GetNumVertices()
++					|| I1 >= StaticVertexBuffer.GetNumVertices()
++					|| I2 >= StaticVertexBuffer.GetNumVertices())
++				{
++					continue;
++				}
++
++				const uint32 ChartId = NextChartId++;
++				const uint32 TileX = ChartId % TilesX;
++				const uint32 TileY = ChartId / TilesX;
++				const float LeftPx = float(TileX * TileSize + Gutter) + 0.5f;
++				const float RightPx = float((TileX + 1) * TileSize - Gutter) - 0.5f;
++				const float TopPx = float(TileY * TileSize + Gutter) + 0.5f;
++				const float BottomPx = float((TileY + 1) * TileSize - Gutter) - 0.5f;
++
++				const float ClipLeft = 2.0f * LeftPx / float(AtlasExtent.X) - 1.0f;
++				const float ClipRight = 2.0f * RightPx / float(AtlasExtent.X) - 1.0f;
++				const float ClipTop = 1.0f - 2.0f * TopPx / float(AtlasExtent.Y);
++				const float ClipBottom = 1.0f - 2.0f * BottomPx / float(AtlasExtent.Y);
++
++				const FVector2D ChartUV[3] =
++				{
++					FVector2D(LeftPx / AtlasExtent.X, TopPx / AtlasExtent.Y),
++					FVector2D(RightPx / AtlasExtent.X, TopPx / AtlasExtent.Y),
++					FVector2D(LeftPx / AtlasExtent.X, BottomPx / AtlasExtent.Y)
++				};
++				const FVector4 ChartClip[3] =
++				{
++					FVector4(ClipLeft, ClipTop, 0.0f, 1.0f),
++					FVector4(ClipRight, ClipTop, 0.0f, 1.0f),
++					FVector4(ClipLeft, ClipBottom, 0.0f, 1.0f)
++				};
++				const uint32 VertexIndices[3] = { I0, I1, I2 };
++
++				for (uint32 Corner = 0; Corner < 3; ++Corner)
++				{
++					const uint32 VertexIndex = VertexIndices[Corner];
++					const FVector WorldPosition = LocalToWorld.TransformPosition(PositionBuffer.VertexPosition(VertexIndex));
++					const FVector4 SourceTangentX = StaticVertexBuffer.VertexTangentX(VertexIndex);
++					const FVector4 SourceTangentZ = StaticVertexBuffer.VertexTangentZ(VertexIndex);
++
++					FVector WorldNormal = NormalToWorld.TransformVector(FVector(SourceTangentZ.X, SourceTangentZ.Y, SourceTangentZ.Z)).GetSafeNormal();
++					FVector WorldTangentX = LocalToWorld.TransformVector(FVector(SourceTangentX.X, SourceTangentX.Y, SourceTangentX.Z)).GetSafeNormal();
++					WorldTangentX = (WorldTangentX - WorldNormal * (WorldTangentX | WorldNormal)).GetSafeNormal();
++					if (WorldNormal.IsNearlyZero() || WorldTangentX.IsNearlyZero())
++					{
++						Vertices.RemoveAt(Vertices.Num() - (Corner), 0, false);
++						continue;
++					}
++
++					FSoftwareRTCaptureVertex Vertex;
++					Vertex.Position = FVector4(WorldPosition, 1.0f);
++					Vertex.TangentX = FVector4(WorldTangentX, 0.0f);
++					const float Handedness = SourceTangentZ.W * (bNegativeDeterminant ? -1.0f : 1.0f);
++					Vertex.TangentZ = FVector4(WorldNormal, Handedness);
++					for (uint32 UVIndex = 0; UVIndex < 4; ++UVIndex)
++					{
++						Vertex.TexCoords[UVIndex] = UVIndex < StaticVertexBuffer.GetNumTexCoords()
++							? StaticVertexBuffer.GetVertexUV(VertexIndex, UVIndex)
++							: FVector2D::ZeroVector;
++					}
++					Vertex.ChartPosition = ChartClip[Corner];
++					Vertex.Color = ColorBuffer.GetNumVertices() == PositionBuffer.GetNumVertices()
++						? ColorBuffer.VertexColor(VertexIndex)
++						: FColor::White;
++					Vertices.Add(Vertex);
++					Indices.Add(Indices.Num());
++				}
++
++				if (Vertices.Num() < 3 || (Vertices.Num() % 3) != 0)
++				{
++					continue;
++				}
++
++				FSoftwareRTCaptureTriangleMetadata& Metadata = OutTriangleMetadata.AddDefaulted_GetRef();
++				Metadata.PrimitiveComponentId = Candidate.PrimitiveSceneInfo->PrimitiveComponentId;
++				Metadata.SourceTriangleIndex = int32(SourceElement.FirstIndex / 3 + TriangleIndex);
++				Metadata.MeshIdInPrimitive = SourceBatch.MeshIdInPrimitive;
++				Metadata.SegmentIndex = SourceBatch.SegmentIndex;
++				Metadata.CaptureChartId = ChartId;
++				Metadata.ChartUV[0] = ChartUV[0];
++				Metadata.ChartUV[1] = ChartUV[1];
++				Metadata.ChartUV[2] = ChartUV[2];
++			}
++
++			if (Vertices.Num() == 0 || (Vertices.Num() % 3) != 0)
++			{
++				continue;
++			}
++
++			TSharedPtr<FSoftwareRTCaptureDrawItem> DrawItem =
++				MakeShareable(new FSoftwareRTCaptureDrawItem(View.GetFeatureLevel()));
++			DrawItem->Initialize_RenderThread(Vertices, Indices);
++
++			FMeshBatch& CaptureBatch = DrawItem->MeshBatch;
++			CaptureBatch.VertexFactory = &DrawItem->VertexFactory;
++			CaptureBatch.MaterialRenderProxy = SourceBatch.MaterialRenderProxy;
++			CaptureBatch.Type = PT_TriangleList;
++			CaptureBatch.DepthPriorityGroup = SDPG_World;
++			CaptureBatch.bDisableBackfaceCulling = true;
++			CaptureBatch.bCanApplyViewModeOverrides = false;
++			CaptureBatch.bUseForMaterial = true;
++			CaptureBatch.LODIndex = Candidate.LODIndex;
++			CaptureBatch.MeshIdInPrimitive = SourceBatch.MeshIdInPrimitive;
++			CaptureBatch.SegmentIndex = SourceBatch.SegmentIndex;
++
++			CaptureBatch.Elements.SetNum(1);
++			FMeshBatchElement& CaptureElement = CaptureBatch.Elements[0];
++			CaptureElement.IndexBuffer = &DrawItem->IndexBuffer;
++			CaptureElement.FirstIndex = 0;
++			CaptureElement.NumPrimitives = Vertices.Num() / 3;
++			CaptureElement.NumInstances = 1;
++			CaptureElement.BaseVertexIndex = 0;
++			CaptureElement.MinVertexIndex = 0;
++			CaptureElement.MaxVertexIndex = Vertices.Num() - 1;
++			CaptureElement.PrimitiveIdMode = PrimID_ForceZero;
++			CaptureElement.PrimitiveUniformBufferResource = &GIdentityPrimitiveUniformBuffer;
++
++			OutMeshBatches.Add(&CaptureBatch);
++			OutOwners.Add(DrawItem);
++		}
++	}
++
+ }
+ 
+-
+@@ -430,3 +701,3 @@
++
+ }
+ 
+-
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+@@ -8,6 +8,7 @@
+ 
+ class FStaticMeshBatch;
+ class FScene;
++class FSoftwareRTCaptureDrawItem;
+ #include "RenderGraphBuilder.h"
+ 
+ namespace SoftwareRTMaterialCapture
+@@ -13,6 +14,25 @@
+ namespace SoftwareRTMaterialCapture
+ {
+ 
++
++	struct FSoftwareRTCaptureTriangleMetadata
++	{
++		FPrimitiveComponentId PrimitiveComponentId;
++		int32 SourceTriangleIndex = INDEX_NONE;
++		int32 MeshIdInPrimitive = INDEX_NONE;
++		uint8 SegmentIndex = 0;
++		uint32 CaptureChartId = 0;
++		FVector2D ChartUV[3];
++	};
++
++	RENDERER_API void BuildSoftwareRTCaptureDrawItems(
++		const FScene* Scene,
++		const FSceneView& View,
++		FIntPoint AtlasExtent,
++		TArray<TSharedPtr<FSoftwareRTCaptureDrawItem>>& OutOwners,
++		TArray<const FMeshBatch*>& OutMeshBatches,
++		TArray<FSoftwareRTCaptureTriangleMetadata>& OutTriangleMetadata);
++
+ 	/** One render-thread source batch accepted by the initial CPU chart builder. */
+ 	struct FSoftwareRTStaticMeshCaptureCandidate
+ 	{
