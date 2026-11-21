@@ -1,0 +1,218 @@
+diff --git a/Engine/Source/Runtime/Engine/Public/PrimitiveSceneProxy.h b/Engine/Source/Runtime/Engine/Public/PrimitiveSceneProxy.h
+--- a/Engine/Source/Runtime/Engine/Public/PrimitiveSceneProxy.h
++++ b/Engine/Source/Runtime/Engine/Public/PrimitiveSceneProxy.h
+@@ -20,6 +20,7 @@
+ class FLightSceneProxy;
+ class FPrimitiveDrawInterface;
+ class FPrimitiveSceneInfo;
++class FStaticMeshRenderData;
+ class FStaticPrimitiveDrawInterface;
+ class UPrimitiveComponent;
+ class URuntimeVirtualTexture;
+@@ -450,6 +451,8 @@
+ 	inline FSceneInterface& GetScene() const { return *Scene; }
+ 	inline FPrimitiveComponentId GetPrimitiveComponentId() const { return PrimitiveComponentId; }
+ 	inline FPrimitiveSceneInfo* GetPrimitiveSceneInfo() const { return PrimitiveSceneInfo; }
++	/** Returns CPU-readable static-mesh render data for opt-in software RT capture, or nullptr when unsupported. */
++	virtual const FStaticMeshRenderData* GetSoftwareRTCaptureRenderData() const { return nullptr; }
+ 	inline const FMatrix& GetLocalToWorld() const { return LocalToWorld; }
+ 	inline bool IsLocalToWorldDeterminantNegative() const { return bIsLocalToWorldDeterminantNegative; }
+ 	inline const FBoxSphereBounds& GetBounds() const { return Bounds; }
+diff --git a/Engine/Source/Runtime/Engine/Public/StaticMeshResources.h b/Engine/Source/Runtime/Engine/Public/StaticMeshResources.h
+--- a/Engine/Source/Runtime/Engine/Public/StaticMeshResources.h
++++ b/Engine/Source/Runtime/Engine/Public/StaticMeshResources.h
+@@ -855,6 +855,9 @@
+ public:
+ 	SIZE_T GetTypeHash() const override;
+ 
++	/** Exposes source LOD data to the renderer's software RT capture provider. */
++	virtual const FStaticMeshRenderData* GetSoftwareRTCaptureRenderData() const override { return RenderData; }
++
+ 	/** Initialization constructor. */
+ 	FStaticMeshSceneProxy(UStaticMeshComponent* Component, bool bForceLODsShareStaticLighting);
+ 
+diff --git a/Engine/Source/Runtime/Engine/Classes/Engine/InstancedStaticMesh.h b/Engine/Source/Runtime/Engine/Classes/Engine/InstancedStaticMesh.h
+--- a/Engine/Source/Runtime/Engine/Classes/Engine/InstancedStaticMesh.h
++++ b/Engine/Source/Runtime/Engine/Classes/Engine/InstancedStaticMesh.h
+@@ -480,6 +480,9 @@
+ public:
+ 	SIZE_T GetTypeHash() const override;
+ 
++	/** Instanced transforms are not expanded by the initial software RT capture path. */
++	virtual const FStaticMeshRenderData* GetSoftwareRTCaptureRenderData() const override { return nullptr; }
++
+ 	FInstancedStaticMeshSceneProxy(UInstancedStaticMeshComponent* InComponent, ERHIFeatureLevel::Type InFeatureLevel)
+ 	:	FStaticMeshSceneProxy(InComponent, true)
+ 	,	StaticMesh(InComponent->GetStaticMesh())
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+@@ -11,6 +11,10 @@
+ #include "RenderGraphUtils.h"
+ #include "SoftwareRTCaptureVertexFactory.h"
+ #include "SoftwareRTMaterialCapture.h"
++#include "PrimitiveSceneInfo.h"
++#include "SceneCore.h"
++#include "ScenePrivate.h"
++#include "StaticMeshResources.h"
+ 
+ namespace SoftwareRTMaterialCapture
+ {
+@@ -308,4 +312,116 @@
+ 		});
+ 		return Outputs;
+ 	}
++	/**
++	 * Gathers static-mesh batches that can be expanded from CPU LOD data.
++	 * This only collects candidates; source batches still use their original VF
++	 * and must never be passed directly to the capture processor.
++	 */
++	void GatherSoftwareRTStaticMeshCaptureCandidates(
++		const FScene* Scene,
++		const FSceneView& View,
++		TArray<FSoftwareRTStaticMeshCaptureCandidate>& OutCandidates)
++	{
++		check(IsInRenderingThread());
++		check(Scene);
++		OutCandidates.Reset();
++
++		for (int32 PrimitiveIndex = 0; PrimitiveIndex < Scene->Primitives.Num(); ++PrimitiveIndex)
++		{
++			FPrimitiveSceneInfo* PrimitiveSceneInfo = Scene->Primitives[PrimitiveIndex];
++			if (PrimitiveSceneInfo == nullptr || PrimitiveSceneInfo->Proxy == nullptr)
++			{
++				continue;
++			}
++
++			const FPrimitiveSceneProxy* Proxy = PrimitiveSceneInfo->Proxy;
++			const FStaticMeshRenderData* RenderData = Proxy->GetSoftwareRTCaptureRenderData();
++			if (RenderData == nullptr || RenderData->LODResources.Num() == 0)
++			{
++				continue;
++			}
++
++			const int32 LODIndex = Proxy->GetLOD(&View);
++			if (!RenderData->LODResources.IsValidIndex(LODIndex)
++				|| LODIndex < RenderData->CurrentFirstLODIdx)
++			{
++				continue;
++			}
++
++			const FStaticMeshLODResources& LODResource = RenderData->LODResources[LODIndex];
++			const FPositionVertexBuffer& PositionBuffer = LODResource.VertexBuffers.PositionVertexBuffer;
++			FStaticMeshVertexBuffer& StaticVertexBuffer =
++				const_cast<FStaticMeshVertexBuffer&>(LODResource.VertexBuffers.StaticMeshVertexBuffer);
++			const FColorVertexBuffer& ColorBuffer = LODResource.VertexBuffers.ColorVertexBuffer;
++
++			// Cooked meshes without CPU-readable position, tangent/UV, or index
++			// data are skipped instead of dereferencing discarded bulk data.
++			if (PositionBuffer.GetVertexData() == nullptr
++				|| !StaticVertexBuffer.GetAllowCPUAccess()
++				|| !LODResource.IndexBuffer.GetNeedsCPUAccess()
++				|| StaticVertexBuffer.GetNumTexCoords() > 4
++				|| (ColorBuffer.GetNumVertices() > 0 && ColorBuffer.GetVertexData() == nullptr))
++			{
++				continue;
++			}
++
++			const FIndexArrayView IndexArray = LODResource.IndexBuffer.GetArrayView();
++			if (IndexArray.Num() == 0)
++			{
++				continue;
++			}
++
++			for (int32 MeshIndex = 0; MeshIndex < PrimitiveSceneInfo->StaticMeshes.Num(); ++MeshIndex)
++			{
++				const FStaticMeshBatch& MeshBatch = PrimitiveSceneInfo->StaticMeshes[MeshIndex];
++				if (MeshBatch.LODIndex != LODIndex
++					|| MeshBatch.Type != PT_TriangleList
++					|| MeshBatch.MaterialRenderProxy == nullptr
++					|| MeshBatch.Elements.Num() != 1
++					|| MeshBatch.bDitheredLODTransition)
++				{
++					continue;
++				}
++
++				const FMeshBatchElement& Element = MeshBatch.Elements[0];
++				if (Element.IndexBuffer != &LODResource.IndexBuffer
++					|| Element.NumPrimitives == 0
++					|| Element.NumInstances != 1
++					|| Element.bIsInstanceRuns
++					|| Element.bIsSplineProxy
++					|| Element.UserData != nullptr
++					|| Element.VertexFactoryUserData != nullptr
++					|| Element.bUserDataIsColorVertexBuffer)
++				{
++					continue;
++				}
++
++				const uint64 EndIndex = uint64(Element.FirstIndex) + uint64(Element.NumPrimitives) * 3ull;
++				if (EndIndex > uint64(IndexArray.Num()))
++				{
++					continue;
++				}
++
++				const FMaterialRenderProxy* FallbackMaterialRenderProxy = nullptr;
++				const FMaterial& Material = MeshBatch.MaterialRenderProxy->GetMaterialWithFallback(
++					View.GetFeatureLevel(),
++					FallbackMaterialRenderProxy);
++				if (FallbackMaterialRenderProxy != nullptr || !Material.IsUsedWithSoftwareRTCapture())
++				{
++					continue;
++				}
++
++				FSoftwareRTStaticMeshCaptureCandidate& Candidate = OutCandidates.AddDefaulted_GetRef();
++				Candidate.MeshBatch = &MeshBatch;
++				Candidate.PrimitiveSceneInfo = PrimitiveSceneInfo;
++				Candidate.LODResource = TRefCountPtr<FStaticMeshLODResources>(
++					const_cast<FStaticMeshLODResources*>(&LODResource));
++				Candidate.PrimitiveIndex = PrimitiveIndex;
++				Candidate.MeshIndex = MeshIndex;
++				Candidate.LODIndex = LODIndex;
++			}
++		}
++	}
++
+ }
++
+@@ -311,1 +424,4 @@
++	}
++
+ }
++
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+@@ -3,6 +3,8 @@
+ #pragma once
+ 
+ #include "MeshPassProcessor.h"
++#include "PrimitiveSceneInfo.h"
++#include "StaticMeshResources.h"
+ #include "RenderGraphBuilder.h"
+ 
+ namespace SoftwareRTMaterialCapture
+@@ -7,6 +9,23 @@
+ 
+ namespace SoftwareRTMaterialCapture
+ {
++
++	/** One render-thread source batch accepted by the initial CPU chart builder. */
++	struct FSoftwareRTStaticMeshCaptureCandidate
++	{
++		const FStaticMeshBatch* MeshBatch = nullptr;
++		FPrimitiveSceneInfo* PrimitiveSceneInfo = nullptr;
++		TRefCountPtr<FStaticMeshLODResources> LODResource;
++		int32 PrimitiveIndex = INDEX_NONE;
++		int32 MeshIndex = INDEX_NONE;
++		int32 LODIndex = INDEX_NONE;
++	};
++
++	RENDERER_API void GatherSoftwareRTStaticMeshCaptureCandidates(
++		const FScene* Scene,
++		const FSceneView& View,
++		TArray<FSoftwareRTStaticMeshCaptureCandidate>& OutCandidates);
++
+ 	struct FSoftwareRTMaterialCaptureOutputs
+ 	{
+ 		FRDGTextureRef BaseColorRoughness = nullptr;
