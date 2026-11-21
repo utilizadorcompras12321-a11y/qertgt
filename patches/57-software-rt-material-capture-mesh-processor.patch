@@ -107,7 +107,7 @@ index 9999999..aaaaaaa 100644
 +
 +			// Do not capture a fallback material: it has no guarantee of carrying
 +			// the opt-in capture permutations.
-+			if (FallbackMaterialRenderProxy != nullptr || !Material.IsUsedWithSoftwareRTCapture())
++			if (FallbackMaterialRenderProxy != MeshBatch.MaterialRenderProxy || !Material.IsUsedWithSoftwareRTCapture())
 +			{
 +				return;
 +			}
