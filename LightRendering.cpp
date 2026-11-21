@@ -769,12 +769,13 @@ private:
 		if (BendScreenSpaceShadowTexture.IsBound())
 		{
 			const bool bHasBendScreenSpaceShadow = RenderLightParams && RenderLightParams->BendScreenSpaceShadowTexture;
+			// The shader reads this texture with Texture2D.Load, so it needs no sampler.
+			// Do not reuse LightAttenuationTextureSampler here: changing its state would
+			// also change the sampler used by the existing shadow-mask lookup.
 			SetTextureParameter(
 				RHICmdList,
 				ShaderRHI,
 				BendScreenSpaceShadowTexture,
-				LightAttenuationTextureSampler,
-				TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI(),
 				bHasBendScreenSpaceShadow ? RenderLightParams->BendScreenSpaceShadowTexture : GWhiteTexture->TextureRHI);
 
 			const uint32 bValid = bHasBendScreenSpaceShadow ? 1u : 0u;
