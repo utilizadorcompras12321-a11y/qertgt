@@ -1,53 +1,43 @@
-diff --git a/Engine/Source/Runtime/Engine/Public/PrimitiveSceneProxy.h b/Engine/Source/Runtime/Engine/Public/PrimitiveSceneProxy.h
---- a/Engine/Source/Runtime/Engine/Public/PrimitiveSceneProxy.h
-+++ b/Engine/Source/Runtime/Engine/Public/PrimitiveSceneProxy.h
-@@ -20,6 +20,7 @@
- class FLightSceneProxy;
- class FPrimitiveDrawInterface;
- class FPrimitiveSceneInfo;
-+class FStaticMeshRenderData;
- class FStaticPrimitiveDrawInterface;
- class UPrimitiveComponent;
- class URuntimeVirtualTexture;
-@@ -450,6 +451,8 @@
- 	inline FSceneInterface& GetScene() const { return *Scene; }
- 	inline FPrimitiveComponentId GetPrimitiveComponentId() const { return PrimitiveComponentId; }
- 	inline FPrimitiveSceneInfo* GetPrimitiveSceneInfo() const { return PrimitiveSceneInfo; }
-+	/** Returns CPU-readable static-mesh render data for opt-in software RT capture, or nullptr when unsupported. */
-+	virtual const FStaticMeshRenderData* GetSoftwareRTCaptureRenderData() const { return nullptr; }
- 	inline const FMatrix& GetLocalToWorld() const { return LocalToWorld; }
- 	inline bool IsLocalToWorldDeterminantNegative() const { return bIsLocalToWorldDeterminantNegative; }
- 	inline const FBoxSphereBounds& GetBounds() const { return Bounds; }
 diff --git a/Engine/Source/Runtime/Engine/Public/StaticMeshResources.h b/Engine/Source/Runtime/Engine/Public/StaticMeshResources.h
 --- a/Engine/Source/Runtime/Engine/Public/StaticMeshResources.h
 +++ b/Engine/Source/Runtime/Engine/Public/StaticMeshResources.h
-@@ -855,6 +855,9 @@
+@@ -854,6 +854,10 @@
+ {
  public:
  	SIZE_T GetTypeHash() const override;
++	/** Stable type identifier for exact FStaticMeshSceneProxy instances. */
++	static SIZE_T GetStaticMeshSceneProxyTypeHash();
++	/** Source LOD data for the experimental software RT capture provider. */
++	const FStaticMeshRenderData* GetSoftwareRTCaptureRenderData() const { return RenderData; }
  
-+	/** Exposes source LOD data to the renderer's software RT capture provider. */
-+	virtual const FStaticMeshRenderData* GetSoftwareRTCaptureRenderData() const override { return RenderData; }
-+
  	/** Initialization constructor. */
  	FStaticMeshSceneProxy(UStaticMeshComponent* Component, bool bForceLODsShareStaticLighting);
+diff --git a/Engine/Source/Runtime/Engine/Private/StaticMeshRender.cpp b/Engine/Source/Runtime/Engine/Private/StaticMeshRender.cpp
+--- a/Engine/Source/Runtime/Engine/Private/StaticMeshRender.cpp
++++ b/Engine/Source/Runtime/Engine/Private/StaticMeshRender.cpp
+@@ -466,12 +466,17 @@
+ 	return false;
+ }
  
-diff --git a/Engine/Source/Runtime/Engine/Classes/Engine/InstancedStaticMesh.h b/Engine/Source/Runtime/Engine/Classes/Engine/InstancedStaticMesh.h
---- a/Engine/Source/Runtime/Engine/Classes/Engine/InstancedStaticMesh.h
-+++ b/Engine/Source/Runtime/Engine/Classes/Engine/InstancedStaticMesh.h
-@@ -480,6 +480,9 @@
- public:
- 	SIZE_T GetTypeHash() const override;
++SIZE_T FStaticMeshSceneProxy::GetStaticMeshSceneProxyTypeHash()
+-SIZE_T FStaticMeshSceneProxy::GetTypeHash() const
+ {
+ 	static size_t UniquePointer;
+ 	return reinterpret_cast<size_t>(&UniquePointer);
+ }
  
-+	/** Instanced transforms are not expanded by the initial software RT capture path. */
-+	virtual const FStaticMeshRenderData* GetSoftwareRTCaptureRenderData() const override { return nullptr; }
++SIZE_T FStaticMeshSceneProxy::GetTypeHash() const
++{
++	return GetStaticMeshSceneProxyTypeHash();
++}
 +
- 	FInstancedStaticMeshSceneProxy(UInstancedStaticMeshComponent* InComponent, ERHIFeatureLevel::Type InFeatureLevel)
- 	:	FStaticMeshSceneProxy(InComponent, true)
- 	,	StaticMesh(InComponent->GetStaticMesh())
+ bool FStaticMeshSceneProxy::GetShadowMeshElement(int32 LODIndex, int32 BatchIndex, uint8 InDepthPriorityGroup, FMeshBatch& OutMeshBatch, bool bDitheredLODTransition) const
+ {
+ 	const FStaticMeshLODResources& LOD = RenderData->LODResources[LODIndex];
 diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
-@@ -11,6 +11,12 @@
+@@ -11,6 +11,10 @@
  #include "RenderGraphUtils.h"
  #include "SoftwareRTCaptureVertexFactory.h"
  #include "SoftwareRTMaterialCapture.h"
@@ -55,12 +45,10 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 +#include "SceneCore.h"
 +#include "ScenePrivate.h"
 +#include "StaticMeshResources.h"
-+class FStaticMeshBatch;
-+class FScene;
  
  namespace SoftwareRTMaterialCapture
  {
-@@ -308,4 +312,117 @@
+@@ -308,4 +312,122 @@
  		});
  		return Outputs;
  	}
@@ -87,7 +75,12 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 +			}
 +
 +			const FPrimitiveSceneProxy* Proxy = PrimitiveSceneInfo->Proxy;
-+			const FStaticMeshRenderData* RenderData = Proxy->GetSoftwareRTCaptureRenderData();
++			if (Proxy->GetTypeHash() != FStaticMeshSceneProxy::GetStaticMeshSceneProxyTypeHash())
++			{
++				continue;
++			}
++			const FStaticMeshSceneProxy* StaticMeshProxy = static_cast<const FStaticMeshSceneProxy*>(Proxy);
++			const FStaticMeshRenderData* RenderData = StaticMeshProxy->GetSoftwareRTCaptureRenderData();
 +			if (RenderData == nullptr || RenderData->LODResources.Num() == 0)
 +			{
 +				continue;
@@ -178,32 +171,23 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 +
  }
 +
-@@ -311,1 +424,4 @@
-+	}
-+
- }
-+
 diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
-@@ -3,6 +3,11 @@
+@@ -3,6 +3,8 @@
  #pragma once
  
  #include "MeshPassProcessor.h"
 +#include "PrimitiveSceneInfo.h"
 +#include "StaticMeshResources.h"
-+
-+class FStaticMeshBatch;
-+class FScene;
  #include "RenderGraphBuilder.h"
  
  namespace SoftwareRTMaterialCapture
-@@ -7,6 +9,23 @@
+@@ -14,6 +16,22 @@
+ 		FRDGTextureRef EmissiveSpecular = nullptr;
+ 	};
  
- namespace SoftwareRTMaterialCapture
- {
 +
-+	/** One render-thread source batch accepted by the initial CPU chart builder. */
 +	struct FSoftwareRTStaticMeshCaptureCandidate
 +	{
 +		const FStaticMeshBatch* MeshBatch = nullptr;
@@ -219,6 +203,6 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h 
 +		const FSceneView& View,
 +		TArray<FSoftwareRTStaticMeshCaptureCandidate>& OutCandidates);
 +
- 	struct FSoftwareRTMaterialCaptureOutputs
- 	{
- 		FRDGTextureRef BaseColorRoughness = nullptr;
+ 	/**
+ 	 * Creates three private PF_FloatRGBA atlas textures and schedules a raster
+ 	 * capture pass. Input batches must already use the capture VF, chart clip
