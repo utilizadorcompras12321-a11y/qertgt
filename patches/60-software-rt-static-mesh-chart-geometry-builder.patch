@@ -10,8 +10,8 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
  class FStaticMeshBatch;
  class FScene;
  
-@@ -427,6 +429,284 @@
- 
+@@ -431,5 +433,284 @@
+ 		}
  	}
  
 +	class FSoftwareRTCaptureIndexBuffer final : public FIndexBuffer
@@ -295,21 +295,12 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 +
  }
  
--
 diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
-@@ -8,6 +8,7 @@
+@@ -17,6 +17,25 @@
+ 	};
  
- class FStaticMeshBatch;
- class FScene;
-+class FSoftwareRTCaptureDrawItem;
- #include "RenderGraphBuilder.h"
- 
- namespace SoftwareRTMaterialCapture
-@@ -13,6 +14,25 @@
- namespace SoftwareRTMaterialCapture
- {
  
 +
 +	struct FSoftwareRTCaptureTriangleMetadata
@@ -330,6 +321,6 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h 
 +		TArray<const FMeshBatch*>& OutMeshBatches,
 +		TArray<FSoftwareRTCaptureTriangleMetadata>& OutTriangleMetadata);
 +
- 	/** One render-thread source batch accepted by the initial CPU chart builder. */
  	struct FSoftwareRTStaticMeshCaptureCandidate
  	{
+ 		const FStaticMeshBatch* MeshBatch = nullptr;
