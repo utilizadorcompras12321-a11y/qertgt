@@ -355,7 +355,11 @@ float ReadBendDepth(DispatchParameters inParameters, float2 LocalPixel)
 		[unroll] for (i = 0; i < READ_COUNT; i++)
 		{
 			// Perspective correct the shadowing depth, in this space, all light rays are parallel
-			float stored_depth = (shadowing_depth[i] - inParameters.LightCoordinate.z) / sample_distance[i];
+			// A sample can land exactly on the projected light position. Avoid a zero divisor.
+			const float SafeSampleDistance = abs(sample_distance[i]) > 1e-6f
+				? sample_distance[i]
+				: (sample_distance[i] < 0.0f ? -1e-6f : 1e-6f);
+			float stored_depth = (shadowing_depth[i] - inParameters.LightCoordinate.z) / SafeSampleDistance;
 
 			if (i != 0)
 			{
@@ -383,7 +387,10 @@ float ReadBendDepth(DispatchParameters inParameters, float2 LocalPixel)
 			start_depth = lerp(start_depth, inParameters.FarDepthValue, -1.0 / 0xFFFF);
 
 		// perspective correct the depth
-		start_depth = (start_depth - inParameters.LightCoordinate.z) / sample_distance[0];
+		const float SafeStartDistance = abs(sample_distance[0]) > 1e-6f
+			? sample_distance[0]
+			: (sample_distance[0] < 0.0f ? -1e-6f : 1e-6f);
+		start_depth = (start_depth - inParameters.LightCoordinate.z) / SafeStartDistance;
 
 		// Start by reading the next value
 		int sample_index = inGroupThreadID + 1;
@@ -397,7 +404,9 @@ float ReadBendDepth(DispatchParameters inParameters, float2 LocalPixel)
 		// The 1.0 / inParameters.SurfaceThickness is to adjust user selected thickness. So a 0.5% thickness will scale depth values from [0,1] to [0,200]. The shadow window is always 1 wide.
 		// 1.0 / depth_thickness_scale[0] is because SurfaceThickness is percentage of remaining depth between the sample and the far clip - not a percentage of the full depth range.
 		// The min() function is to make sure the window is a minimum width when very close to the light. The +direction term will bias the result so the pixel at the very center of the light is either fully lit or shadowed
-		float depth_scale = min(sample_distance[0] + direction, 1.0 / inParameters.SurfaceThickness) * sample_distance[0] / depth_thickness_scale[0];
+		// Sky/far-plane pixels have zero depth thickness. Keep the scale finite for them.
+		const float SafeDepthThickness = max(depth_thickness_scale[0], 1e-6f);
+		float depth_scale = min(sample_distance[0] + direction, 1.0 / max(inParameters.SurfaceThickness, 1e-6f)) * sample_distance[0] / SafeDepthThickness;
 
 		start_depth = start_depth * depth_scale - z_sign;
 
