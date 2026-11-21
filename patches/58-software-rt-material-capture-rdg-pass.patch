@@ -18,7 +18,7 @@ index aaaaaaa..bbbbbbb 100644
 +	END_SHADER_PARAMETER_STRUCT()
 +
  	static bool ShouldCompile(const FMeshMaterialShaderPermutationParameters& Parameters)
-@@ -241,1 +247,64 @@
+@@ -241,1 +247,65 @@
 +	FSoftwareRTMaterialCaptureOutputs AddSoftwareRTMaterialCapturePass(
 +		FRDGBuilder& GraphBuilder,
 +		const FScene* Scene,
