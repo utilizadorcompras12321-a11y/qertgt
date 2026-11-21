@@ -114,14 +114,13 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
-@@ -7,6 +7,8 @@
+@@ -7,5 +7,9 @@
  #include "StaticMeshResources.h"
  #include "RenderGraphBuilder.h"
  
 +class FRHICommandListImmediate;
 +class IPooledRenderTarget;
- class FSoftwareRTCaptureDrawItem;
- 
++
  namespace SoftwareRTMaterialCapture
 @@ -70,6 +72,16 @@
  		FIntPoint AtlasExtent);
