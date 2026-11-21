@@ -20,6 +20,7 @@
 #include "HairStrands/HairStrandsRendering.h"
 #include "ScreenPass.h"
 #include "RenderGraphUtils.h"
+#include "ScreenSpaceShadows.h"
 #include "SkyAtmosphereRendering.h"
 #include "VolumetricCloudRendering.h"
 
@@ -383,6 +384,108 @@ public:
 };
 
 IMPLEMENT_GLOBAL_SHADER(FScreenSpaceShadowsCS, "/Engine/Private/ScreenSpaceShadows.usf", "ScreenSpaceShadowsCS", SF_Compute);
+
+static TAutoConsoleVariable<int32> CVarScreenSpaceShadows(
+	TEXT("r.ScreenSpaceShadows"),
+	0,
+	TEXT("Enables Bend Studio screen-space shadows for shadow-casting directional lights."),
+	ECVF_RenderThreadSafe);
+
+static void RenderBendScreenSpaceShadows(
+	FRDGBuilder& GraphBuilder,
+	const FViewInfo& View,
+	const FLightSceneProxy& LightSceneProxy,
+	FRDGTextureRef SceneDepthTexture,
+	FRDGTextureRef OutputTexture)
+{
+	const FIntPoint ViewSize = View.ViewRect.Size();
+	const FIntPoint TextureSize = SceneDepthTexture->Desc.Extent;
+	if (ViewSize.X <= 0 || ViewSize.Y <= 0 || TextureSize.X <= 0 || TextureSize.Y <= 0)
+	{
+		return;
+	}
+
+	FIntRect ScissorRect;
+	if (!LightSceneProxy.GetScissorRect(ScissorRect, View, View.ViewRect))
+	{
+		ScissorRect = View.ViewRect;
+	}
+	ScissorRect.Clip(View.ViewRect);
+	if (ScissorRect.IsEmpty())
+	{
+		return;
+	}
+
+	const FIntPoint MinBounds = ScissorRect.Min - View.ViewRect.Min;
+	const FIntPoint MaxBounds = ScissorRect.Max - View.ViewRect.Min - FIntPoint(1, 1);
+
+	const FVector4 LightProjection = View.ViewMatrices.GetViewProjectionMatrix().TransformFVector4(
+		FVector4(-LightSceneProxy.GetDirection(), 0.0f));
+
+	const float LightProjectionArray[4] =
+	{
+		LightProjection.X,
+		LightProjection.Y,
+		LightProjection.Z,
+		LightProjection.W
+	};
+	const int32 ViewportSize[2] = { ViewSize.X, ViewSize.Y };
+	const int32 MinRenderBounds[2] = { MinBounds.X, MinBounds.Y };
+	const int32 MaxRenderBounds[2] = { MaxBounds.X, MaxBounds.Y };
+
+	const Bend::DispatchList DispatchList = Bend::BuildDispatchList(
+		LightProjectionArray, ViewportSize, MinRenderBounds, MaxRenderBounds, false, 64);
+
+	if (DispatchList.DispatchCount <= 0)
+	{
+		return;
+	}
+
+	TShaderMapRef<FScreenSpaceShadowsCS> ComputeShader(View.ShaderMap);
+	for (int32 DispatchIndex = 0; DispatchIndex < DispatchList.DispatchCount; ++DispatchIndex)
+	{
+		const Bend::DispatchData& Dispatch = DispatchList.Dispatch[DispatchIndex];
+		FScreenSpaceShadowsCS::FParameters* PassParameters = GraphBuilder.AllocParameters<FScreenSpaceShadowsCS::FParameters>();
+
+		PassParameters->SceneDepthTexture = SceneDepthTexture;
+		PassParameters->ScreenSpaceShadowOutput = GraphBuilder.CreateUAV(OutputTexture);
+		PassParameters->SurfaceThickness = 0.005f;
+		PassParameters->BilinearThreshold = 0.02f;
+		PassParameters->ShadowContrast = 4.0f;
+		PassParameters->IgnoreEdgePixels = 0;
+		PassParameters->UsePrecisionOffset = 0;
+		PassParameters->BilinearSamplingOffsetMode = 0;
+		PassParameters->DebugOutputEdgeMask = 0;
+		PassParameters->DebugOutputThreadIndex = 0;
+		PassParameters->DebugOutputWaveIndex = 0;
+		PassParameters->DepthBounds = FVector2D(0.0f, 1.0f);
+		PassParameters->UseEarlyOut = 0;
+		PassParameters->LightCoordinate = FVector4(
+			DispatchList.LightCoordinate_Shader[0],
+			DispatchList.LightCoordinate_Shader[1],
+			DispatchList.LightCoordinate_Shader[2],
+			DispatchList.LightCoordinate_Shader[3]);
+		PassParameters->WaveOffset = FIntPoint(
+			Dispatch.WaveOffset_Shader[0],
+			Dispatch.WaveOffset_Shader[1]);
+		PassParameters->FarDepthValue = 0.0f;
+		PassParameters->NearDepthValue = 1.0f;
+		PassParameters->InvDepthTextureSize = FVector2D(
+			1.0f / static_cast<float>(TextureSize.X),
+			1.0f / static_cast<float>(TextureSize.Y));
+		PassParameters->ViewRectMin = View.ViewRect.Min;
+		PassParameters->ViewRectSize = ViewSize;
+
+		FComputeShaderUtils::AddPass(
+			GraphBuilder,
+			RDG_EVENT_NAME("BendScreenSpaceShadows[%d]", DispatchIndex),
+			ERDGPassFlags::Compute,
+			ComputeShader,
+			PassParameters,
+			FIntVector(Dispatch.WaveCount[0], Dispatch.WaveCount[1], Dispatch.WaveCount[2]));
+	}
+}
+
 
 
 struct FRenderLightParams
@@ -2076,6 +2179,37 @@ FRDGTextureRef FDeferredShadingSceneRenderer::RenderLights(
 				{
 					ScreenShadowMaskTexture = nullptr;
 					ScreenShadowMaskSubPixelTexture = nullptr;
+				}
+
+				// Optional Bend SSS debug output. The result is kept separate from the RGBA shadow mask.
+				if (CVarScreenSpaceShadows.GetValueOnRenderThread() != 0
+					&& bDirectLighting
+					&& bDrawShadows
+					&& bUsedShadowMaskTexture
+					&& LightSceneInfo.Proxy->GetLightType() == LightType_Directional
+					&& SceneDepthTexture)
+				{
+					const FIntPoint DepthExtent = SceneDepthTexture->Desc.Extent;
+					FRDGTextureDesc ShadowDesc = FRDGTextureDesc::Create2D(
+						DepthExtent,
+						PF_R32_FLOAT,
+						FClearValueBinding::Black,
+						TexCreate_ShaderResource | TexCreate_UAV);
+					FRDGTextureRef BendShadowTexture = GraphBuilder.CreateTexture(ShadowDesc, TEXT("BendScreenSpaceShadow"));
+
+					AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(BendShadowTexture), 1.0f, ERDGPassFlags::Compute);
+
+					for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ++ViewIndex)
+					{
+						const FViewInfo& View = Views[ViewIndex];
+						RDG_GPU_MASK_SCOPE(GraphBuilder, View.GPUMask);
+						if (LightSceneInfo.ShouldRenderLight(View))
+						{
+							RenderBendScreenSpaceShadows(GraphBuilder, View, *LightSceneInfo.Proxy, SceneDepthTexture, BendShadowTexture);
+						}
+					}
+
+					VisualizeTexture.SetCheckPoint(GraphBuilder, TEXT("BendScreenSpaceShadow"), BendShadowTexture);
 				}
 
 				// Render the light to the scene color buffer, conditionally using the attenuation buffer or a 1x1 white texture as input 
