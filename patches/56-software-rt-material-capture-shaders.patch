@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000..9999999
 --- /dev/null
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,93 @@
 +// Copyright Epic Games, Inc. All Rights Reserved.
 +
 +#include "MaterialShared.h"
@@ -20,8 +20,8 @@ index 0000000..9999999
 +		return Material.bIsUsedWithSoftwareRTCapture
 +			&& Material.MaterialDomain == MD_Surface
 +			&& Material.BlendMode == BLEND_Opaque
-			&& !Material.bIsTwoSided
-			&& Material.NumCustomizedUVs <= 4
++			&& !Material.bIsTwoSided
++			&& Material.NumCustomizedUVs <= 4
 +			&& Material.TessellationMode == MTM_NoTessellation
 +			&& !Material.bHasVertexPositionOffsetConnected
 +			&& !Material.bHasPixelDepthOffsetConnected
@@ -187,9 +187,9 @@ index 0000000..9999999 100644
 +++ b/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
 @@ -42,2 +42,3 @@
  	TANGENTTOWORLD_INTERPOLATOR_BLOCK
-+\tfloat3 TranslatedWorldPosition : TEXCOORD12;
++	float3 TranslatedWorldPosition : TEXCOORD12;
  };
 @@ -166,1 +167,2 @@
 -	Interpolants.TangentToWorld0 = float4(Intermediates.TangentToWorld[0], 0);
-+\tInterpolants.TranslatedWorldPosition = VertexParameters.WorldPosition;
++	Interpolants.TranslatedWorldPosition = VertexParameters.WorldPosition;
 +	Interpolants.TangentToWorld0 = float4(Intermediates.TangentToWorld[0], 0);
