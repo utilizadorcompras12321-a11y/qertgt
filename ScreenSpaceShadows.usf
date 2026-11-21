@@ -39,7 +39,7 @@ int2 ViewRectSize;
 [numthreads(WAVE_SIZE, 1, 1)]
 void ScreenSpaceShadowsCS(
 	uint3 GroupId : SV_GroupID,
-	uint GroupThreadId : SV_GroupThreadID)
+	uint3 GroupThreadId : SV_GroupThreadID)
 {
 	DispatchParameters Parameters;
 
@@ -67,5 +67,5 @@ void ScreenSpaceShadowsCS(
 	Parameters.DepthTexture = SceneDepthTexture;
 	Parameters.OutputTexture = ScreenSpaceShadowOutput;
 
-	WriteScreenSpaceShadow(Parameters, (int3)GroupId, (int)GroupThreadId);
+	WriteScreenSpaceShadow(Parameters, (int3)GroupId, (int)GroupThreadId.x);
 }
