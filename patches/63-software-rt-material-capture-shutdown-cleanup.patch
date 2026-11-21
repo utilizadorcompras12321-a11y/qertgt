@@ -9,7 +9,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
  class FStaticMeshBatch;
  class FScene;
  
-@@ -107,6 +108,27 @@
+@@ -107,6 +108,28 @@
  		Retired.Owners = MoveTemp(Owners);
  	}
  
@@ -17,6 +17,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 +	void ShutdownSoftwareRTMaterialCapture_RenderThread(FRHICommandListImmediate& RHICmdList)
 +	{
 +		check(IsInRenderingThread());
++		RHICmdList.ImmediateFlush(EImmediateFlushType::DispatchToRHIThread);
 +
 +		for (FSoftwareRTCaptureRetiredDrawItems& Retired : GSoftwareRTCaptureRetiredDrawItems)
 +		{
