@@ -10,7 +10,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
  class FStaticMeshBatch;
  class FScene;
  
-@@ -427,6 +429,275 @@
+@@ -427,6 +429,284 @@
  
  	}
  
@@ -168,7 +168,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 +					continue;
 +				}
 +
-+				const uint32 ChartId = NextChartId++;
++				const uint32 ChartId = NextChartId;
 +				const uint32 TileX = ChartId % TilesX;
 +				const uint32 TileY = ChartId / TilesX;
 +				const float LeftPx = float(TileX * TileSize + Gutter) + 0.5f;
@@ -194,6 +194,8 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 +					FVector4(ClipLeft, ClipBottom, 0.0f, 1.0f)
 +				};
 +				const uint32 VertexIndices[3] = { I0, I1, I2 };
++				FSoftwareRTCaptureVertex TriangleVertices[3];
++				bool bValidTriangle = true;
 +
 +				for (uint32 Corner = 0; Corner < 3; ++Corner)
 +				{
@@ -202,16 +204,18 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 +					const FVector4 SourceTangentX = StaticVertexBuffer.VertexTangentX(VertexIndex);
 +					const FVector4 SourceTangentZ = StaticVertexBuffer.VertexTangentZ(VertexIndex);
 +
-+					FVector WorldNormal = NormalToWorld.TransformVector(FVector(SourceTangentZ.X, SourceTangentZ.Y, SourceTangentZ.Z)).GetSafeNormal();
-+					FVector WorldTangentX = LocalToWorld.TransformVector(FVector(SourceTangentX.X, SourceTangentX.Y, SourceTangentX.Z)).GetSafeNormal();
++					const FVector WorldNormal = NormalToWorld.TransformVector(
++						FVector(SourceTangentZ.X, SourceTangentZ.Y, SourceTangentZ.Z)).GetSafeNormal();
++					FVector WorldTangentX = LocalToWorld.TransformVector(
++						FVector(SourceTangentX.X, SourceTangentX.Y, SourceTangentX.Z)).GetSafeNormal();
 +					WorldTangentX = (WorldTangentX - WorldNormal * (WorldTangentX | WorldNormal)).GetSafeNormal();
 +					if (WorldNormal.IsNearlyZero() || WorldTangentX.IsNearlyZero())
 +					{
-+						Vertices.RemoveAt(Vertices.Num() - (Corner), 0, false);
-+						continue;
++						bValidTriangle = false;
++						break;
 +					}
 +
-+					FSoftwareRTCaptureVertex Vertex;
++					FSoftwareRTCaptureVertex& Vertex = TriangleVertices[Corner];
 +					Vertex.Position = FVector4(WorldPosition, 1.0f);
 +					Vertex.TangentX = FVector4(WorldTangentX, 0.0f);
 +					const float Handedness = SourceTangentZ.W * (bNegativeDeterminant ? -1.0f : 1.0f);
@@ -226,16 +230,21 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 +					Vertex.Color = ColorBuffer.GetNumVertices() == PositionBuffer.GetNumVertices()
 +						? ColorBuffer.VertexColor(VertexIndex)
 +						: FColor::White;
-+					Vertices.Add(Vertex);
-+					Indices.Add(Indices.Num());
 +				}
 +
-+				if (Vertices.Num() < 3 || (Vertices.Num() % 3) != 0)
++				if (!bValidTriangle)
 +				{
 +					continue;
 +				}
 +
-+				FSoftwareRTCaptureTriangleMetadata& Metadata = OutTriangleMetadata.AddDefaulted_GetRef();
++				for (uint32 Corner = 0; Corner < 3; ++Corner)
++				{
++					Vertices.Add(TriangleVertices[Corner]);
++					Indices.Add(uint32(Indices.Num()));
++				}
++				++NextChartId;
++
+++				FSoftwareRTCaptureTriangleMetadata& Metadata = OutTriangleMetadata.AddDefaulted_GetRef();
 +				Metadata.PrimitiveComponentId = Candidate.PrimitiveSceneInfo->PrimitiveComponentId;
 +				Metadata.SourceTriangleIndex = int32(SourceElement.FirstIndex / 3 + TriangleIndex);
 +				Metadata.MeshIdInPrimitive = SourceBatch.MeshIdInPrimitive;
