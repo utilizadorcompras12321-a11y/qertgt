@@ -505,6 +505,7 @@ struct FRenderLightParams
 	FShaderResourceViewRHIRef HairVisibilityNodeDataSRV = nullptr;
 
 	IPooledRenderTarget* ScreenShadowMaskSubPixelTexture = nullptr;
+	FRHITexture* BendScreenSpaceShadowTexture = nullptr;
 
 	// Cloud shadow data
 	FMatrix Cloud_WorldToLightClipShadowMatrix;
@@ -676,6 +677,8 @@ class FDeferredLightPS : public FGlobalShader
 	{
 		LightAttenuationTexture.Bind(Initializer.ParameterMap, TEXT("LightAttenuationTexture"));
 		LightAttenuationTextureSampler.Bind(Initializer.ParameterMap, TEXT("LightAttenuationTextureSampler"));
+		BendScreenSpaceShadowTexture.Bind(Initializer.ParameterMap, TEXT("BendScreenSpaceShadowTexture"));
+		BendScreenSpaceShadowValid.Bind(Initializer.ParameterMap, TEXT("BendScreenSpaceShadowValid"));
 		LTCMatTexture.Bind(Initializer.ParameterMap, TEXT("LTCMatTexture"));
 		LTCMatSampler.Bind(Initializer.ParameterMap, TEXT("LTCMatSampler"));
 		LTCAmpTexture.Bind(Initializer.ParameterMap, TEXT("LTCAmpTexture"));
@@ -761,6 +764,21 @@ private:
 				LightAttenuationTextureSampler,
 				TStaticSamplerState<SF_Point,AM_Wrap,AM_Wrap,AM_Wrap>::GetRHI(),
 				ScreenShadowMaskTexture);
+		}
+
+		if (BendScreenSpaceShadowTexture.IsBound())
+		{
+			const bool bHasBendScreenSpaceShadow = RenderLightParams && RenderLightParams->BendScreenSpaceShadowTexture;
+			SetTextureParameter(
+				RHICmdList,
+				ShaderRHI,
+				BendScreenSpaceShadowTexture,
+				LightAttenuationTextureSampler,
+				TStaticSamplerState<SF_Point, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI(),
+				bHasBendScreenSpaceShadow ? RenderLightParams->BendScreenSpaceShadowTexture : GWhiteTexture->TextureRHI);
+
+			const uint32 bValid = bHasBendScreenSpaceShadow ? 1u : 0u;
+			SetShaderValue(RHICmdList, ShaderRHI, BendScreenSpaceShadowValid, bValid);
 		}
 
 		SetTextureParameter(
@@ -970,6 +988,8 @@ private:
 
 	LAYOUT_FIELD(FShaderResourceParameter, LightAttenuationTexture);
 	LAYOUT_FIELD(FShaderResourceParameter, LightAttenuationTextureSampler);
+	LAYOUT_FIELD(FShaderResourceParameter, BendScreenSpaceShadowTexture);
+	LAYOUT_FIELD(FShaderParameter, BendScreenSpaceShadowValid);
 	LAYOUT_FIELD(FShaderResourceParameter, LTCMatTexture);
 	LAYOUT_FIELD(FShaderResourceParameter, LTCMatSampler);
 	LAYOUT_FIELD(FShaderResourceParameter, LTCAmpTexture);
@@ -1334,7 +1354,8 @@ BEGIN_SHADER_PARAMETER_STRUCT(FRenderLightParameters, )
 	SHADER_PARAMETER_RDG_UNIFORM_BUFFER(FSceneTextureUniformParameters, SceneTextures)
 	RDG_TEXTURE_ACCESS(HairCategorizationTexture, ERHIAccess::SRVGraphics)
 	RDG_TEXTURE_ACCESS(ShadowMaskTexture, ERHIAccess::SRVGraphics)
-	RDG_TEXTURE_ACCESS(LightingChannelsTexture, ERHIAccess::SRVGraphics) 
+	RDG_TEXTURE_ACCESS(LightingChannelsTexture, ERHIAccess::SRVGraphics)
+	RDG_TEXTURE_ACCESS(BendScreenSpaceShadowTexture, ERHIAccess::SRVGraphics) 
 	RENDER_TARGET_BINDING_SLOTS()
 END_SHADER_PARAMETER_STRUCT()
 
@@ -2218,7 +2239,7 @@ FRDGTextureRef FDeferredShadingSceneRenderer::RenderLights(
 				if (bDirectLighting)
 				{
 					const bool bRenderOverlap = false;
-					RenderLight(GraphBuilder, SceneColorTexture, SceneDepthTexture, SceneTexturesUniformBuffer, &LightSceneInfo, ScreenShadowMaskTexture, LightingChannelsTexture, InHairVisibilityViews, bRenderOverlap);
+					RenderLight(GraphBuilder, SceneColorTexture, SceneDepthTexture, SceneTexturesUniformBuffer, &LightSceneInfo, ScreenShadowMaskTexture, LightingChannelsTexture, InHairVisibilityViews, bRenderOverlap, BendShadowTexture);
 				}
 
 				if (bUseHairLighting)
@@ -2406,7 +2427,8 @@ void FDeferredShadingSceneRenderer::RenderLight(
 	FRHITexture* ScreenShadowMaskTexture,
 	FRHITexture* LightingChannelsTexture,
 	const FHairStrandsVisibilityViews* InHairVisibilityViews,
-	bool bRenderOverlap, bool bIssueDrawEvent)
+	bool bRenderOverlap, bool bIssueDrawEvent,
+	FRHITexture* BendScreenSpaceShadowTexture)
 {
 	SCOPE_CYCLE_COUNTER(STAT_DirectLightRenderingTime);
 	INC_DWORD_STAT(STAT_NumLightsUsingStandardDeferred);
@@ -2443,6 +2465,7 @@ void FDeferredShadingSceneRenderer::RenderLight(
 		RHICmdList.SetViewport(View.ViewRect.Min.X, View.ViewRect.Min.Y, 0.0f, View.ViewRect.Max.X, View.ViewRect.Max.Y, 1.0f);
 
 		FRenderLightParams RenderLightParams;
+		RenderLightParams.BendScreenSpaceShadowTexture = BendScreenSpaceShadowTexture;
 		const int32 HairViewIndex = 0; // HAIR_TODO multiview support
 		const bool bHairLighting = InHairVisibilityViews && HairViewIndex < InHairVisibilityViews->HairDatas.Num() && InHairVisibilityViews->HairDatas[HairViewIndex].CategorizationTexture != nullptr;
 		if (bHairLighting)
@@ -2619,10 +2642,12 @@ void FDeferredShadingSceneRenderer::RenderLight(
 	FRDGTextureRef ScreenShadowMaskTexture,
 	FRDGTextureRef LightingChannelsTexture,
 	const FHairStrandsVisibilityViews* InHairVisibilityViews,
-	bool bRenderOverlap)
+	bool bRenderOverlap,
+	FRDGTextureRef BendScreenSpaceShadowTexture)
 {
 	FRenderLightParameters* PassParameters = GraphBuilder.AllocParameters<FRenderLightParameters>();
 	GetRenderLightParameters(SceneColorTexture, SceneDepthTexture, ScreenShadowMaskTexture, LightingChannelsTexture, SceneTexturesUniformBuffer, InHairVisibilityViews, *PassParameters);
+	PassParameters->BendScreenSpaceShadowTexture = BendScreenSpaceShadowTexture;
 
 	ERDGPassFlags PassFlags = ERDGPassFlags::Raster;
 
@@ -2635,7 +2660,7 @@ void FDeferredShadingSceneRenderer::RenderLight(
 		RDG_EVENT_NAME("StandardDeferredLighting"),
 		PassParameters,
 		PassFlags,
-		[this, LightSceneInfo, ScreenShadowMaskTexture, LightingChannelsTexture, InHairVisibilityViews, bRenderOverlap](FRHICommandList& RHICmdList)
+		[this, LightSceneInfo, ScreenShadowMaskTexture, LightingChannelsTexture, InHairVisibilityViews, bRenderOverlap, BendScreenSpaceShadowTexture](FRHICommandList& RHICmdList)
 	{
 		RenderLight(
 			RHICmdList,
@@ -2644,7 +2669,8 @@ void FDeferredShadingSceneRenderer::RenderLight(
 			TryGetRHI(LightingChannelsTexture),
 			InHairVisibilityViews,
 			bRenderOverlap,
-			false);
+			false,
+			TryGetRHI(BendScreenSpaceShadowTexture));
 	});
 }
 
