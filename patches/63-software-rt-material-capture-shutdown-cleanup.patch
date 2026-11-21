@@ -1,0 +1,75 @@
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+@@ -20,6 +20,7 @@
+ #include "HAL/IConsoleManager.h"
+ #include "Async/TaskGraphInterfaces.h"
+ #include "RenderTargetPool.h"
++#include "RHICommandList.h"
+ class FStaticMeshBatch;
+ class FScene;
+ 
+@@ -107,6 +108,27 @@
+ 		Retired.Owners = MoveTemp(Owners);
+ 	}
+ 
++
++	void ShutdownSoftwareRTMaterialCapture_RenderThread(FRHICommandListImmediate& RHICmdList)
++	{
++		check(IsInRenderingThread());
++
++		for (FSoftwareRTCaptureRetiredDrawItems& Retired : GSoftwareRTCaptureRetiredDrawItems)
++		{
++			if (IsValidRef(Retired.Fence))
++			{
++				FRHICommandListExecutor::WaitOnRHIThreadFence(Retired.Fence);
++			}
++			Retired.Owners.Reset();
++		}
++		GSoftwareRTCaptureRetiredDrawItems.Reset();
++
++		GSoftwareRTCaptureBaseColorRoughness = nullptr;
++		GSoftwareRTCaptureWorldNormalMetallic = nullptr;
++		GSoftwareRTCaptureEmissiveSpecular = nullptr;
++		GSoftwareRTCaptureTriangleMetadata.Reset();
++	}
++
+ 	BEGIN_SHADER_PARAMETER_STRUCT(FSoftwareRTMaterialCapturePassParameters, )
+ 		RENDER_TARGET_BINDING_SLOTS()
+ 	END_SHADER_PARAMETER_STRUCT()
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+@@ -76,6 +76,7 @@
+ 
+ 	RENDERER_API bool IsSoftwareRTMaterialCaptureEnabled();
+ 	RENDERER_API void CollectRetiredSoftwareRTCaptureDrawItems_RenderThread();
++	RENDERER_API void ShutdownSoftwareRTMaterialCapture_RenderThread(FRHICommandListImmediate& RHICmdList);
+ 	RENDERER_API void RetireSoftwareRTCaptureDrawItems_RenderThread(
+ 		FRHICommandListImmediate& RHICmdList,
+ 		TArray<TSharedPtr<FSoftwareRTCaptureDrawItem>>&& Owners);
+diff --git a/Engine/Source/Runtime/Renderer/Private/Renderer.cpp b/Engine/Source/Runtime/Renderer/Private/Renderer.cpp
+--- a/Engine/Source/Runtime/Renderer/Private/Renderer.cpp
++++ b/Engine/Source/Runtime/Renderer/Private/Renderer.cpp
+@@ -5,6 +5,7 @@
+ =============================================================================*/
+ 
+ #include "CoreMinimal.h"
++#include "SoftwareRTMaterialCapture.h"
+ #include "Misc/CoreMisc.h"
+ #include "Stats/Stats.h"
+ #include "Modules/ModuleManager.h"
+@@ -60,6 +61,13 @@
+ 
+ void FRendererModule::ShutdownModule()
+ {
++	ENQUEUE_RENDER_COMMAND(ShutdownSoftwareRTMaterialCapture)(
++		[](FRHICommandListImmediate& RHICmdList)
++		{
++			SoftwareRTMaterialCapture::ShutdownSoftwareRTMaterialCapture_RenderThread(RHICmdList);
++		});
++	FlushRenderingCommands();
++
+ 	FVirtualTextureSystem::Shutdown();
+ 
+ 	// Free up the memory of the default denoiser. Responsibility of the plugin to free up theirs.
