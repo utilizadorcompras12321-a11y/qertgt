@@ -2205,6 +2205,8 @@ FRDGTextureRef FDeferredShadingSceneRenderer::RenderLights(
 					ScreenShadowMaskSubPixelTexture = nullptr;
 				}
 
+				FRDGTextureRef BendShadowTexture = nullptr;
+
 				// Optional Bend SSS debug output. The result is kept separate from the RGBA shadow mask.
 				if (CVarScreenSpaceShadows.GetValueOnRenderThread() != 0
 					&& bDirectLighting
@@ -2219,7 +2221,7 @@ FRDGTextureRef FDeferredShadingSceneRenderer::RenderLights(
 						PF_R32_FLOAT,
 						FClearValueBinding::Black,
 						TexCreate_ShaderResource | TexCreate_UAV);
-					FRDGTextureRef BendShadowTexture = GraphBuilder.CreateTexture(ShadowDesc, TEXT("BendScreenSpaceShadow"));
+					BendShadowTexture = GraphBuilder.CreateTexture(ShadowDesc, TEXT("BendScreenSpaceShadow"));
 
 					AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(BendShadowTexture), 1.0f, ERDGPassFlags::Compute);
 
@@ -2595,7 +2597,7 @@ void FDeferredShadingSceneRenderer::RenderLight(
 				GraphicsPSOInit.BoundShaderState.PixelShaderRHI = PixelShader.GetPixelShader();
 
 				SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit);
-				PixelShader->SetParameters(RHICmdList, View, LightSceneInfo, ScreenShadowMaskTexture, LightingChannelsTexture, (bHairLighting) ? &RenderLightParams : nullptr);
+				PixelShader->SetParameters(RHICmdList, View, LightSceneInfo, ScreenShadowMaskTexture, LightingChannelsTexture, (bHairLighting || RenderLightParams.BendScreenSpaceShadowTexture) ? &RenderLightParams : nullptr);
 			}
 
 			VertexShader->SetParameters(RHICmdList, View, LightSceneInfo);
