@@ -1,11 +1,3 @@
-diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
---- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
-+++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
-@@ -585,2 +585,2 @@
--			: VertexFactory(FeatureLevel)
--			, PrimitiveUniformBuffer(InPrimitiveUniformBuffer)
-+			: PrimitiveUniformBuffer(InPrimitiveUniformBuffer)
-+			, VertexFactory(FeatureLevel)
 diff --git a/Engine/Source/Runtime/Renderer/Private/DeferredShadingRenderer.cpp b/Engine/Source/Runtime/Renderer/Private/DeferredShadingRenderer.cpp
 --- a/Engine/Source/Runtime/Renderer/Private/DeferredShadingRenderer.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/DeferredShadingRenderer.cpp
