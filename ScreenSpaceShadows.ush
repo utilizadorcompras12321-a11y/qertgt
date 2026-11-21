@@ -254,7 +254,7 @@ float ReadBendDepth(DispatchParameters inParameters, float2 LocalPixel)
 		float pixel_distance;
 		bool x_axis_major;	// major axis is x axis? abs(xy_delta.x) > abs(xy_delta.y).
 
-		ComputeWavefrontExtents(inParameters, (int3)inGroupID, inGroupThreadID.x, xy_delta, pixel_xy, pixel_distance, x_axis_major);
+		ComputeWavefrontExtents(inParameters, (int3)inGroupID, inGroupThreadID, xy_delta, pixel_xy, pixel_distance, x_axis_major);
 
 		// Read in the depth values
 		float sampling_depth[READ_COUNT];
@@ -365,7 +365,7 @@ float ReadBendDepth(DispatchParameters inParameters, float2 LocalPixel)
 			}
 
 			// Store the depth values in groupshared
-			int idx = (i * WAVE_SIZE) + inGroupThreadID.x;
+			int idx = (i * WAVE_SIZE) + inGroupThreadID;
 			DepthData[idx] = stored_depth;
 		}
 
@@ -386,7 +386,7 @@ float ReadBendDepth(DispatchParameters inParameters, float2 LocalPixel)
 		start_depth = (start_depth - inParameters.LightCoordinate.z) / sample_distance[0];
 
 		// Start by reading the next value
-		int sample_index = inGroupThreadID.x + 1;
+		int sample_index = inGroupThreadID + 1;
 
 		float4 shadow_value = 1;
 		float hard_shadow = 1;
