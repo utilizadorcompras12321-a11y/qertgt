@@ -152,8 +152,6 @@ struct DispatchParameters
 	int2 ViewRectMin;						// Scene-texture pixel origin of this view.
 	int2 ViewRectSize;						// View-local dimensions; out-of-view samples return FarDepthValue.
 
-	Texture2D<float> DepthTexture;		// Rasterized non-linear scene depth.
-	RWTexture2D<float> OutputTexture;	// Single-channel screen-space shadow output.
 };
 
 // Explicit viewport-border behavior equivalent to the Bend point-border sampler.
@@ -165,7 +163,7 @@ float ReadBendDepth(DispatchParameters inParameters, float2 LocalPixel)
 		return inParameters.FarDepthValue;
 	}
 	int2 SceneTexel = inParameters.ViewRectMin + LocalTexel;
-	return inParameters.DepthTexture.Load(int3(SceneTexel, 0));
+	return SceneDepthTexture.Load(int3(SceneTexel, 0));
 }
 
 
@@ -180,8 +178,6 @@ float ReadBendDepth(DispatchParameters inParameters, float2 LocalPixel)
 
 		// Example:
 		// return inParameters.CustomShadowMapTerm[pixel_xy] == 0;
-
-		(void)pixel_xy;	//unused by this implementation, avoid potential compiler warning.
 
 		// The compiled code will be more optimal if the 'depth' value is not referenced.
 		return depth >= inParameters.DepthBounds.y || depth <= inParameters.DepthBounds.x;
@@ -466,7 +462,7 @@ float ReadBendDepth(DispatchParameters inParameters, float2 LocalPixel)
 			{
 				return;
 			}
-			inParameters.OutputTexture[inParameters.ViewRectMin + LocalWritePixel] = result;
+			ScreenSpaceShadowOutput[inParameters.ViewRectMin + LocalWritePixel] = result;
 		}
 	}
 
