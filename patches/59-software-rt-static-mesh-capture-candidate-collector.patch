@@ -60,7 +60,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
  
  namespace SoftwareRTMaterialCapture
  {
-@@ -308,4 +312,116 @@
+@@ -308,4 +312,117 @@
  		});
  		return Outputs;
  	}
@@ -112,7 +112,8 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 +				|| !StaticVertexBuffer.GetAllowCPUAccess()
 +				|| !LODResource.IndexBuffer.GetNeedsCPUAccess()
 +				|| StaticVertexBuffer.GetNumTexCoords() > 4
-+				|| (ColorBuffer.GetNumVertices() > 0 && ColorBuffer.GetVertexData() == nullptr))
++				|| (ColorBuffer.GetNumVertices() > 0 && ColorBuffer.GetVertexData() == nullptr)
++				|| (ColorBuffer.GetNumVertices() > 0 && ColorBuffer.GetNumVertices() != PositionBuffer.GetNumVertices()))
 +			{
 +				continue;
 +			}
