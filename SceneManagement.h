@@ -1441,9 +1441,6 @@ public:
 	inline FGuid GetLightGuid() const { return LightGuid; }
 	inline float GetShadowSharpen() const { return ShadowSharpen; }
 
-	/** Colored translucent cascade shadows: overridden by FDirectionalLightSceneProxy. */
-	virtual bool CastsColoredTranslucentCascadeShadows() const { return false; }
-
 	inline float GetContactShadowLength() const { return ContactShadowLength; }
 	inline bool IsContactShadowLengthInWS() const { return bContactShadowLengthInWS; }
 	inline float GetSpecularScale() const { return SpecularScale; }
