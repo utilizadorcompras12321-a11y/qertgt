@@ -160,6 +160,14 @@ public:
 	{}
 };
 
+/** One translucent RGB cascade cell associated with an existing projected CSM cascade. */
+struct FColoredCascadeShadowEntry
+{
+	const FProjectedShadowInfo* Shadow = nullptr;
+	int32 CellIndex = INDEX_NONE;
+	FIntRect CellRect;
+};
+
 /** Information about a visible light which isn't view-specific. */
 class FVisibleLightInfo
 {
@@ -173,6 +181,8 @@ public:
 
 	/** Shadows to project for each feature that needs special handling. */
 	TArray<FProjectedShadowInfo*,SceneRenderingAllocator> ShadowsToProject;
+	/** Cascades selected for the colored translucent shadow pass. */
+	TArray<FColoredCascadeShadowEntry, SceneRenderingAllocator> ColoredCascadeShadows;
 	TArray<FProjectedShadowInfo*,SceneRenderingAllocator> CapsuleShadowsToProject;
 	TArray<FProjectedShadowInfo*,SceneRenderingAllocator> RSMsToProject;
 
