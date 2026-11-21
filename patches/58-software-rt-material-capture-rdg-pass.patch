@@ -1,0 +1,122 @@
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+index aaaaaaa..bbbbbbb 100644
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+@@ -8,5 +8,7 @@
+ #include "MeshPassProcessor.h"
+ #include "MeshPassProcessor.inl"
++#include "RenderGraphBuilder.h"
++#include "RenderGraphUtils.h"
+ #include "SoftwareRTCaptureVertexFactory.h"
+ #include "SoftwareRTMaterialCapture.h"
+ 
+@@ -13,3 +15,7 @@
+ namespace SoftwareRTMaterialCapture
+ {
++	BEGIN_SHADER_PARAMETER_STRUCT(FSoftwareRTMaterialCapturePassParameters, )
++		RENDER_TARGET_BINDING_SLOTS()
++	END_SHADER_PARAMETER_STRUCT()
++
+ 	static bool ShouldCompile(const FMeshMaterialShaderPermutationParameters& Parameters)
+@@ -241,1 +247,64 @@
++	FSoftwareRTMaterialCaptureOutputs AddSoftwareRTMaterialCapturePass(
++		FRDGBuilder& GraphBuilder,
++		const FScene* Scene,
++		const FSceneView& View,
++		const TArray<const FMeshBatch*>& MeshBatches,
++		FIntPoint AtlasExtent)
++	{
++		check(Scene);
++		check(AtlasExtent.X > 0 && AtlasExtent.Y > 0);
++
++		const FRDGTextureDesc CaptureDesc = FRDGTextureDesc::Create2D(
++			AtlasExtent,
++			PF_FloatRGBA,
++			FClearValueBinding::Black,
++			TexCreate_RenderTargetable | TexCreate_ShaderResource);
++
++		FSoftwareRTMaterialCaptureOutputs Outputs;
++		Outputs.BaseColorRoughness = GraphBuilder.CreateTexture(CaptureDesc, TEXT("SoftwareRT.BaseColorRoughness"));
++		Outputs.WorldNormalMetallic = GraphBuilder.CreateTexture(CaptureDesc, TEXT("SoftwareRT.WorldNormalMetallic"));
++		Outputs.EmissiveSpecular = GraphBuilder.CreateTexture(CaptureDesc, TEXT("SoftwareRT.EmissiveSpecular"));
++
++		FSoftwareRTMaterialCapturePassParameters* PassParameters =
++			GraphBuilder.AllocParameters<FSoftwareRTMaterialCapturePassParameters>();
++		PassParameters->RenderTargets[0] = FRenderTargetBinding(
++			Outputs.BaseColorRoughness,
++			ERenderTargetLoadAction::EClear);
++		PassParameters->RenderTargets[1] = FRenderTargetBinding(
++			Outputs.WorldNormalMetallic,
++			ERenderTargetLoadAction::EClear);
++		PassParameters->RenderTargets[2] = FRenderTargetBinding(
++			Outputs.EmissiveSpecular,
++			ERenderTargetLoadAction::EClear);
++
++		// The caller retains every pointed-to batch and its resources through
++		// graph execution and subsequent RHI retirement.
++		const TArray<const FMeshBatch*> MeshBatchesCopy = MeshBatches;
++
++		GraphBuilder.AddPass(
++			RDG_EVENT_NAME("SoftwareRTMaterialCapture"),
++			PassParameters,
++			ERDGPassFlags::Raster,
++			[Scene, &View, MeshBatchesCopy, AtlasExtent](FRHICommandListImmediate& RHICmdList)
++		{
++			RHICmdList.SetViewport(0.0f, 0.0f, 0.0f, float(AtlasExtent.X), float(AtlasExtent.Y), 1.0f);
++			RHICmdList.SetScissorRect(false, 0, 0, 0, 0);
++
++			DrawDynamicMeshPass(
++				View,
++				RHICmdList,
++				[Scene, &View, &MeshBatchesCopy](FMeshPassDrawListContext* DrawListContext)
++				{
++					FSoftwareRTMaterialCaptureMeshProcessor Processor(Scene, View, DrawListContext);
++					for (const FMeshBatch* MeshBatch : MeshBatchesCopy)
++					{
++						if (MeshBatch)
++						{
++							Processor.AddMeshBatch(*MeshBatch, ~uint64(0), nullptr, -1);
++						}
++					}
++				},
++				true);
++		});
++		return Outputs;
++	}
+ }
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+index aaaaaaa..bbbbbbb 100644
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+@@ -5,1 +5,2 @@
+ #include "MeshPassProcessor.h"
++#include "RenderGraphBuilder.h"
+@@ -7,4 +8,28 @@
+ namespace SoftwareRTMaterialCapture
+ {
++	struct FSoftwareRTMaterialCaptureOutputs
++	{
++		FRDGTextureRef BaseColorRoughness = nullptr;
++		FRDGTextureRef WorldNormalMetallic = nullptr;
++		FRDGTextureRef EmissiveSpecular = nullptr;
++	};
++
++	/**
++	 * Creates three private PF_FloatRGBA atlas textures and schedules a raster
++	 * capture pass. Input batches must already use the capture VF, chart clip
++	 * positions, and the identity primitive uniform buffer.
++	 *
++	 * The caller owns all input batches and their referenced resources through
++	 * GraphBuilder.Execute() and subsequent RHI retirement. Returned RDG texture
++	 * refs are valid only in this graph and must be consumed by later RDG passes.
++	 */
++	RENDERER_API FSoftwareRTMaterialCaptureOutputs AddSoftwareRTMaterialCapturePass(
++		FRDGBuilder& GraphBuilder,
++		const FScene* Scene,
++		const FSceneView& View,
++		const TArray<const FMeshBatch*>& MeshBatches,
++		FIntPoint AtlasExtent);
++
++
+ 	/**
+ 	 * Draws one caller-built chart capture batch.
