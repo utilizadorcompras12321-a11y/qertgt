@@ -57,6 +57,12 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h 
 diff --git a/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush b/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
 --- a/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
 +++ b/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush
+@@ -142,1 +142,1 @@
+-		Result.TexCoords[CoordinateIndex] = Input.TexCoords[min(CoordinateIndex, 3)];
++		Result.TexCoords[CoordinateIndex] = CoordinateIndex < 4 ? Input.TexCoords[CoordinateIndex] : float2(0.0f, 0.0f);
+@@ -159,1 +159,1 @@
+-		Interpolants.TexCoords[CoordinateIndex] = Input.TexCoords[min(CoordinateIndex, 3)];
++		Interpolants.TexCoords[CoordinateIndex] = CoordinateIndex < 4 ? Input.TexCoords[CoordinateIndex] : float2(0.0f, 0.0f);
 @@ -169,3 +169,6 @@
  	Interpolants.TangentToWorld2 = float4(
  		Intermediates.TangentToWorld[2],
