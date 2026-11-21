@@ -410,8 +410,11 @@ static void RenderBendScreenSpaceShadows(
 	{
 		ScissorRect = View.ViewRect;
 	}
-	ScissorRect.Clip(View.ViewRect);
-	if (ScissorRect.IsEmpty())
+	ScissorRect.Min.X = FMath::Max(ScissorRect.Min.X, View.ViewRect.Min.X);
+	ScissorRect.Min.Y = FMath::Max(ScissorRect.Min.Y, View.ViewRect.Min.Y);
+	ScissorRect.Max.X = FMath::Min(ScissorRect.Max.X, View.ViewRect.Max.X);
+	ScissorRect.Max.Y = FMath::Min(ScissorRect.Max.Y, View.ViewRect.Max.Y);
+	if (ScissorRect.Min.X >= ScissorRect.Max.X || ScissorRect.Min.Y >= ScissorRect.Max.Y)
 	{
 		return;
 	}
@@ -479,7 +482,7 @@ static void RenderBendScreenSpaceShadows(
 		FComputeShaderUtils::AddPass(
 			GraphBuilder,
 			RDG_EVENT_NAME("BendScreenSpaceShadows[%d]", DispatchIndex),
-			ERDGPassFlags::Compute,
+			ERDGPassFlags::Compute | ERDGPassFlags::NeverCull,
 			ComputeShader,
 			PassParameters,
 			FIntVector(Dispatch.WaveCount[0], Dispatch.WaveCount[1], Dispatch.WaveCount[2]));
@@ -2209,7 +2212,6 @@ FRDGTextureRef FDeferredShadingSceneRenderer::RenderLights(
 						}
 					}
 
-					VisualizeTexture.SetCheckPoint(GraphBuilder, TEXT("BendScreenSpaceShadow"), BendShadowTexture);
 				}
 
 				// Render the light to the scene color buffer, conditionally using the attenuation buffer or a 1x1 white texture as input 
