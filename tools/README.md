@@ -45,7 +45,7 @@ A `manifest.txt` records which files were backed up and which were new. The scri
 
 Apply these executable patches one at a time, in this exact order:
 
-`50 → 53 → 54 → 55 → 56 → 57 → 58 → 59 → 60 → 61 → 62 → 63`
+`50 → 53 → 54 → 55 → 56 → 57 → 58 → 59 → 60 → 61 → 62 → 63 → 64 → 65 → 66`
 
 The capture path is disabled by default. After applying and compiling the Engine, enable it with:
 
