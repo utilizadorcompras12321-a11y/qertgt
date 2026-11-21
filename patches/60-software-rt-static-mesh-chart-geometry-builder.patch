@@ -302,10 +302,9 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h 
  #include "StaticMeshResources.h"
  #include "RenderGraphBuilder.h"
  
-+class FSoftwareRTCaptureDrawItem;
-+
  namespace SoftwareRTMaterialCapture
  {
++	class FSoftwareRTCaptureDrawItem;
  	struct FSoftwareRTMaterialCaptureOutputs
 @@ -17,6 +19,25 @@
  	};
