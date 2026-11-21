@@ -21,6 +21,7 @@ index 0000000..9999999
 +			&& Material.MaterialDomain == MD_Surface
 +			&& Material.BlendMode == BLEND_Opaque
 			&& !Material.bIsTwoSided
+			&& Material.NumCustomizedUVs <= 4
 +			&& Material.TessellationMode == MTM_NoTessellation
 +			&& !Material.bHasVertexPositionOffsetConnected
 +			&& !Material.bHasPixelDepthOffsetConnected
