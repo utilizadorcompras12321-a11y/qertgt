@@ -1,7 +1,7 @@
 diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
-@@ -17,6 +17,9 @@
+@@ -17,11 +17,90 @@
  #include "StaticMeshResources.h"
  #include "SoftwareRTCaptureVertexFactory.h"
  #include "RHI.h"
@@ -10,8 +10,6 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 +#include "RenderTargetPool.h"
  class FStaticMeshBatch;
  class FScene;
- 
-@@ -22,6 +25,82 @@
  
  namespace SoftwareRTMaterialCapture
  {
@@ -116,19 +114,21 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
-@@ -9,6 +9,8 @@
- class FStaticMeshBatch;
- class FScene;
- class FSoftwareRTCaptureDrawItem;
-+class FRHICommandListImmediate;
-+class IPooledRenderTarget;
+@@ -7,6 +7,10 @@
+ #include "StaticMeshResources.h"
  #include "RenderGraphBuilder.h"
  
++class FSoftwareRTCaptureDrawItem;
++class FRHICommandListImmediate;
++class IPooledRenderTarget;
++
  namespace SoftwareRTMaterialCapture
-@@ -85,6 +87,16 @@
- 	 * the chart viewport/scissor configured. This is a smoke-test helper, not
- 	 * the production RDG integration.
- 	 */
+ {
+ 	struct FSoftwareRTMaterialCaptureOutputs
+@@ -68,6 +72,16 @@
+ 		FIntPoint AtlasExtent);
+ 
+ 
 +
 +	RENDERER_API bool IsSoftwareRTMaterialCaptureEnabled();
 +	RENDERER_API void CollectRetiredSoftwareRTCaptureDrawItems_RenderThread();
@@ -139,9 +139,9 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h 
 +	RENDERER_API const TRefCountPtr<IPooledRenderTarget>& GetSoftwareRTCaptureWorldNormalMetallic();
 +	RENDERER_API const TRefCountPtr<IPooledRenderTarget>& GetSoftwareRTCaptureEmissiveSpecular();
 +
- 	RENDERER_API void DrawSoftwareRTMaterialCaptureMesh(
- 		const FScene* Scene,
- 		const FSceneView& View,
+ 	/**
+ 	 * Draws one caller-built chart capture batch.
+ 	 *
 diff --git a/Engine/Source/Runtime/Renderer/Private/DeferredShadingRenderer.cpp b/Engine/Source/Runtime/Renderer/Private/DeferredShadingRenderer.cpp
 --- a/Engine/Source/Runtime/Renderer/Private/DeferredShadingRenderer.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/DeferredShadingRenderer.cpp
