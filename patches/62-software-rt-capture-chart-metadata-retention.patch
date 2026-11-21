@@ -1,0 +1,60 @@
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+@@ -35,6 +35,7 @@
+ 	static TRefCountPtr<IPooledRenderTarget> GSoftwareRTCaptureBaseColorRoughness;
+ 	static TRefCountPtr<IPooledRenderTarget> GSoftwareRTCaptureWorldNormalMetallic;
+ 	static TRefCountPtr<IPooledRenderTarget> GSoftwareRTCaptureEmissiveSpecular;
++	static TArray<FSoftwareRTCaptureTriangleMetadata> GSoftwareRTCaptureTriangleMetadata;
+ 
+ 	struct FSoftwareRTCaptureRetiredDrawItems
+ 	{
+@@ -64,6 +65,12 @@
+ 		return GSoftwareRTCaptureEmissiveSpecular;
+ 	}
+ 
++
++	const TArray<FSoftwareRTCaptureTriangleMetadata>& GetSoftwareRTCaptureTriangleMetadata()
++	{
++		return GSoftwareRTCaptureTriangleMetadata;
++	}
++
+ 	void CollectRetiredSoftwareRTCaptureDrawItems_RenderThread()
+ 	{
+ 		check(IsInRenderingThread());
+@@ -745,6 +752,7 @@
+ 				Metadata.PrimitiveComponentId = Candidate.PrimitiveSceneInfo->PrimitiveComponentId;
+ 				Metadata.SourceTriangleIndex = int32(SourceElement.FirstIndex / 3 + TriangleIndex);
+ 				Metadata.MeshIdInPrimitive = SourceBatch.MeshIdInPrimitive;
++				Metadata.LODIndex = Candidate.LODIndex;
+ 				Metadata.SegmentIndex = SourceBatch.SegmentIndex;
+ 				Metadata.CaptureChartId = ChartId;
+ 				Metadata.ChartUV[0] = ChartUV[0];
+@@ -788,6 +796,8 @@
+ 			OutMeshBatches.Add(&CaptureBatch);
+ 			OutOwners.Add(DrawItem);
+ 		}
++
++		GSoftwareRTCaptureTriangleMetadata = OutTriangleMetadata;
+ 	}
+ 
+ }
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+@@ -22,6 +22,7 @@
+ 		FPrimitiveComponentId PrimitiveComponentId;
+ 		int32 SourceTriangleIndex = INDEX_NONE;
+ 		int32 MeshIdInPrimitive = INDEX_NONE;
++	int32 LODIndex = INDEX_NONE;
+ 		uint8 SegmentIndex = 0;
+ 		uint32 CaptureChartId = 0;
+ 		FVector2D ChartUV[3];
+@@ -96,6 +97,7 @@
+ 	RENDERER_API const TRefCountPtr<IPooledRenderTarget>& GetSoftwareRTCaptureBaseColorRoughness();
+ 	RENDERER_API const TRefCountPtr<IPooledRenderTarget>& GetSoftwareRTCaptureWorldNormalMetallic();
+ 	RENDERER_API const TRefCountPtr<IPooledRenderTarget>& GetSoftwareRTCaptureEmissiveSpecular();
++	RENDERER_API const TArray<FSoftwareRTCaptureTriangleMetadata>& GetSoftwareRTCaptureTriangleMetadata();
+ 
+ 	RENDERER_API void DrawSoftwareRTMaterialCaptureMesh(
+ 		const FScene* Scene,
