@@ -20,6 +20,7 @@ index 0000000..9999999
 +		return Material.bIsUsedWithSoftwareRTCapture
 +			&& Material.MaterialDomain == MD_Surface
 +			&& Material.BlendMode == BLEND_Opaque
+			&& !Material.bIsTwoSided
 +			&& Material.TessellationMode == MTM_NoTessellation
 +			&& !Material.bHasVertexPositionOffsetConnected
 +			&& !Material.bHasPixelDepthOffsetConnected
