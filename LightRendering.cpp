@@ -2208,7 +2208,7 @@ FRDGTextureRef FDeferredShadingSceneRenderer::RenderLights(
 
 				FRDGTextureRef BendShadowTexture = nullptr;
 
-				// Optional Bend SSS debug output. The result is kept separate from the RGBA shadow mask.
+				// Generate Bend SSS visibility separately, then multiply it into opaque shadow visibility during light shading.
 				if (CVarScreenSpaceShadows.GetValueOnRenderThread() != 0
 					&& FeatureLevel >= ERHIFeatureLevel::SM5
 					&& bDirectLighting
