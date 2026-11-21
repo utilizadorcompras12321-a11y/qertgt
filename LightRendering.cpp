@@ -462,7 +462,9 @@ static void RenderBendScreenSpaceShadows(
 		PassParameters->DebugOutputThreadIndex = 0;
 		PassParameters->DebugOutputWaveIndex = 0;
 		PassParameters->DepthBounds = FVector2D(0.0f, 1.0f);
-		PassParameters->UseEarlyOut = 0;
+		// UE4.27 uses reversed-Z: clear sky is 0 and the near clip plane is 1.
+		// Skip those pixels after the groupshared barrier; their output remains lit from the UAV clear.
+		PassParameters->UseEarlyOut = 1;
 		PassParameters->LightCoordinate = FVector4(
 			DispatchList.LightCoordinate_Shader[0],
 			DispatchList.LightCoordinate_Shader[1],
