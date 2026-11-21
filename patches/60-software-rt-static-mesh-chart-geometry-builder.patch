@@ -127,7 +127,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 +		for (const FSoftwareRTStaticMeshCaptureCandidate& Candidate : Candidates)
 +		{
 +			if (NextChartId >= MaxCharts || Candidate.MeshBatch == nullptr
-+				|| Candidate.PrimitiveSceneInfo == nullptr || !Candidate.LODResource.IsValid())
++				|| Candidate.PrimitiveSceneInfo == nullptr || !IsValidRef(Candidate.LODResource))
 +			{
 +				break;
 +			}
