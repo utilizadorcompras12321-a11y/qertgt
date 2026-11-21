@@ -1,0 +1,55 @@
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
+@@ -153,6 +153,8 @@
+ 			&& Material.BlendMode == BLEND_Opaque
+ 			&& !Material.bIsTwoSided
+ 			&& Material.NumCustomizedUVs <= 4
++			&& Material.ShadingModels.HasOnlyShadingModel(MSM_DefaultLit)
++			&& !Material.bHasRuntimeVirtualTextureOutput
+ 			&& Material.TessellationMode == MTM_NoTessellation
+ 			&& !Material.bHasVertexPositionOffsetConnected
+ 			&& !Material.bHasPixelDepthOffsetConnected
+@@ -231,8 +233,8 @@
+ 	/**
+ 	 * Deliberately narrow first draw path:
+ 	 * - one caller-owned capture FMeshBatch;
++	 * - chart-expanded vertices remain in local space and use the source primitive uniform buffer;
++	 * - per-object primitive uniform buffer and PrimID_ForceZero.
+-	 * - chart-expanded vertices already contain translated-world positions;
+-	 * - identity primitive uniform buffer and PrimID_ForceZero.
+ 	 *
+ 	 * The VF does not advertise a primitive-ID stream, so UE4.27 binds the
+ 	 * element's primitive uniform buffer even when GPU Scene is enabled.
+@@ -595,8 +597,8 @@
+ 		explicit FSoftwareRTCaptureDrawItem(
+ 			ERHIFeatureLevel::Type FeatureLevel,
+ 			FRHIUniformBuffer* InPrimitiveUniformBuffer)
++			: PrimitiveUniformBuffer(InPrimitiveUniformBuffer)
++			, VertexFactory(FeatureLevel)
+-			: VertexFactory(FeatureLevel)
+-			, PrimitiveUniformBuffer(InPrimitiveUniformBuffer)
+ 		{
+ 			check(IsValidRef(PrimitiveUniformBuffer));
+ 		}
+diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+--- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
++++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
+@@ -59,7 +59,7 @@
+ 	/**
+ 	 * Creates three private PF_FloatRGBA atlas textures and schedules a raster
+ 	 * capture pass. Input batches must already use the capture VF, chart clip
++	 * positions, and a valid per-object primitive uniform buffer matching the local-space vertex data.
+-	 * positions, and the identity primitive uniform buffer.
+ 	 *
+ 	 * The caller owns all input batches and their referenced resources through
+ 	 * GraphBuilder.Execute() and subsequent RHI retirement. Returned RDG texture
+@@ -92,7 +92,7 @@
+ 	 * The caller owns and retains the mesh batch, capture VF, vertex/index
+ 	 * buffers, material proxy, and primitive uniform buffer through command
+ 	 * submission and RHI retirement. Every selected element must use
++	 * a valid per-object primitive uniform buffer and PrimID_ForceZero.
+-	 * GIdentityPrimitiveUniformBuffer and PrimID_ForceZero.
+ 	 *
+ 	 * Call only inside a render pass with three PF_FloatRGBA targets bound and
+ 	 * the chart viewport/scissor configured. This is a smoke-test helper, not
