@@ -114,7 +114,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.h
-@@ -7,5 +7,9 @@
+@@ -7,4 +7,7 @@
  #include "StaticMeshResources.h"
  #include "RenderGraphBuilder.h"
  
