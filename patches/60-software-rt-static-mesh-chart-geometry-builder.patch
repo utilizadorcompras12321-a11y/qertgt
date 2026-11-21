@@ -244,7 +244,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 +				}
 +				++NextChartId;
 +
-++				FSoftwareRTCaptureTriangleMetadata& Metadata = OutTriangleMetadata.AddDefaulted_GetRef();
++				FSoftwareRTCaptureTriangleMetadata& Metadata = OutTriangleMetadata.AddDefaulted_GetRef();
 +				Metadata.PrimitiveComponentId = Candidate.PrimitiveSceneInfo->PrimitiveComponentId;
 +				Metadata.SourceTriangleIndex = int32(SourceElement.FirstIndex / 3 + TriangleIndex);
 +				Metadata.MeshIdInPrimitive = SourceBatch.MeshIdInPrimitive;
