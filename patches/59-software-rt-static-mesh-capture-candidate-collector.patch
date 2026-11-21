@@ -37,7 +37,7 @@ diff --git a/Engine/Source/Runtime/Engine/Private/StaticMeshRender.cpp b/Engine/
 diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
-@@ -11,6 +11,10 @@
+@@ -11,6 +11,12 @@
  #include "RenderGraphUtils.h"
  #include "SoftwareRTCaptureVertexFactory.h"
  #include "SoftwareRTMaterialCapture.h"
@@ -45,6 +45,8 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 +#include "SceneCore.h"
 +#include "ScenePrivate.h"
 +#include "StaticMeshResources.h"
++class FStaticMeshBatch;
++class FScene;
  
  namespace SoftwareRTMaterialCapture
  {
