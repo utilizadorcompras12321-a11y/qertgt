@@ -69,10 +69,3 @@ diff --git a/Engine/Shaders/Private/SoftwareRTCaptureVertexFactory.ush b/Engine/
 +#if USE_WORLDVERTEXNORMAL_CENTER_INTERPOLATION
 +	Result.WorldVertexNormal_Center = Interpolants.TangentToWorld2_Center.xyz;
 +#endif
-@@ -195,3 +198,6 @@
- 	Result.TangentToWorld = AssembleTangentToWorld(Interpolants.TangentToWorld0.xyz, Interpolants.TangentToWorld2);
- 	Result.UnMirrored = Interpolants.TangentToWorld2.w;
-+#if USE_WORLDVERTEXNORMAL_CENTER_INTERPOLATION
-+	Result.WorldVertexNormal_Center = Interpolants.TangentToWorld2_Center.xyz;
-+#endif
- 	Result.TwoSidedSign = 1;
