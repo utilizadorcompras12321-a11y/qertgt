@@ -41,6 +41,21 @@ Before applying, existing target files are copied under:
 
 A `manifest.txt` records which files were backed up and which were new. The script then applies the patch with Git.
 
+## Experimental Surface Cache capture patch order
+
+Apply these executable patches one at a time, in this exact order:
+
+`50 → 53 → 54 → 55 → 56 → 57 → 58 → 59 → 60 → 61 → 62`
+
+The capture path is disabled by default. After applying and compiling the Engine, enable it with:
+
+```text
+r.SoftwareRT.MaterialCapture 1
+```
+
+Initial limitations: only opted-in opaque, one-sided materials; CPU-readable Static Mesh LOD data; no Instanced/HISM meshes; one view-selected LOD; 1024×1024 atlas with a 16-pixel triangle tile (maximum 4096 charts). This is an experimental capture proof, not a production cache: chart dilation, material/view-expression filtering, revision invalidation, and GI/shadow/reflection consumers are still outstanding.
+
+
 ## Important limitations
 
 - This is a guarded patch applier, not an automatic patch downloader or patch-sequencing system.
