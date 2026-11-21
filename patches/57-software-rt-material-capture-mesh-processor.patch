@@ -17,24 +17,10 @@ index 9999999..aaaaaaa 100644
  
  namespace SoftwareRTMaterialCapture
  {
-@@ -10,15 +15,16 @@
- 	static bool ShouldCompile(const FMeshMaterialShaderPermutationParameters& Parameters)
- 	{
- 		const FMaterialShaderParameters& Material = Parameters.MaterialParameters;
- 
+@@ -20,1 +20,2 @@
 -		return Material.bIsUsedWithSoftwareRTCapture
 +		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5)
 +			&& Material.bIsUsedWithSoftwareRTCapture
- 			&& Material.MaterialDomain == MD_Surface
- 			&& Material.BlendMode == BLEND_Opaque
- 			&& Material.TessellationMode == MTM_NoTessellation
- 			&& !Material.bHasVertexPositionOffsetConnected
- 			&& !Material.bHasPixelDepthOffsetConnected
- 			&& !Material.bMaterialMayModifyMeshPosition
- 			&& Parameters.VertexFactoryType == &FSoftwareRTCaptureVertexFactory::StaticType
- 			&& FMeshMaterialShader::ShouldCompilePermutation(Parameters);
- 	}
- 
 @@ -85,7 +91,151 @@
  	IMPLEMENT_MATERIAL_SHADER_TYPE(
  		,
