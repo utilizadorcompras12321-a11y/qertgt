@@ -2,7 +2,7 @@ diff --git a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cp
 index 9999999..aaaaaaa 100644
 --- a/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
 +++ b/Engine/Source/Runtime/Renderer/Private/SoftwareRTMaterialCapture.cpp
-@@ -1,9 +1,15 @@
+@@ -1,9 +1,14 @@
  // Copyright Epic Games, Inc. All Rights Reserved.
  
  #include "MaterialShared.h"
@@ -12,7 +12,6 @@ index 9999999..aaaaaaa 100644
 +#include "RenderUtils.h"
 +#include "MeshPassProcessor.h"
 +#include "MeshPassProcessor.inl"
-+#include "ShaderBaseClasses.h"
  #include "SoftwareRTCaptureVertexFactory.h"
 +#include "SoftwareRTMaterialCapture.h"
  
